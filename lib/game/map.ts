@@ -1,4 +1,5 @@
 import type { Vec2 } from "./types.ts";
+import { dist } from "./math.ts";
 
 // The arena is a fixed grid of tiles. Enemies march along a fixed S-shaped path
 // from the entry (left) to the base (right). Towers may be built on any tile the
@@ -21,13 +22,11 @@ export const WAYPOINTS: Vec2[] = [
 // The base (player's country) sits at the end of the path.
 export const BASE_CELL: Vec2 = { x: 13, y: 7 };
 
-const dist2 = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
-
 /** Total path length in tiles. */
 export function pathLength(waypoints: Vec2[] = WAYPOINTS): number {
   let total = 0;
   for (let i = 1; i < waypoints.length; i++) {
-    total += dist2(waypoints[i - 1], waypoints[i]);
+    total += dist(waypoints[i - 1], waypoints[i]);
   }
   return total;
 }
@@ -40,7 +39,7 @@ export function pointAtDistance(
   if (d <= 0) return { ...waypoints[0] };
   let remaining = d;
   for (let i = 1; i < waypoints.length; i++) {
-    const seg = dist2(waypoints[i - 1], waypoints[i]);
+    const seg = dist(waypoints[i - 1], waypoints[i]);
     if (remaining <= seg) {
       const t = seg === 0 ? 0 : remaining / seg;
       return {
@@ -59,7 +58,7 @@ export function pathCells(waypoints: Vec2[] = WAYPOINTS): Set<string> {
   for (let i = 1; i < waypoints.length; i++) {
     const a = waypoints[i - 1];
     const b = waypoints[i];
-    const steps = Math.ceil(dist2(a, b) * 4);
+    const steps = Math.ceil(dist(a, b) * 4);
     for (let s = 0; s <= steps; s++) {
       const t = steps === 0 ? 0 : s / steps;
       const c = Math.round(a.x + (b.x - a.x) * t);

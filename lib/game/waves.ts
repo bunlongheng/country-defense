@@ -48,11 +48,13 @@ export function spawnWave(
   wave: number,
   pool: Country[],
   spacing = 1.6,
+  seed = 0,
 ): Enemy[] {
   const stats = waveStats(wave);
   const enemies: Enemy[] = [];
   for (let i = 0; i < ENEMIES_PER_WAVE; i++) {
-    const country = pool[(wave * 7 + i * 3) % pool.length];
+    const idx = ((seed + wave * 7 + i * 3) % pool.length + pool.length) % pool.length;
+    const country = pool[idx];
     const dist = -i * spacing; // staggered behind the entry
     enemies.push({
       id: nextId++,

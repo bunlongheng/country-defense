@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
-import { getFlagImage, loadFlagImage } from "@/lib/flagImage";
-import type { Enemy, Projectile, Tower, TowerType, Vec2 } from "@/lib/game/types";
+import { loadFlagImage } from "@/lib/flagImage";
+import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
   GRID_COLS,
   GRID_ROWS,
-  WAYPOINTS,
-  BASE_CELL,
   pathCells,
   pathLength,
   isBuildable,
@@ -17,10 +15,10 @@ import {
   TOWER_DEFS,
   TOWER_ORDER,
   MAX_LEVEL,
-  towerStats,
   upgradeCost,
   sellValue,
 } from "@/lib/game/towers";
+import { draw } from "@/lib/game/render";
 import {
   spawnWave,
   waveClearBonus,
@@ -61,6 +59,8 @@ export default function Game({
   const nextTowerId = useRef(1);
   const phaseRef = useRef<Phase>("ready");
   const cellRef = useRef(48); // px per tile, recomputed on resize
+  const seedRef = useRef(0); // per-game seed so each playthrough varies invaders
+  const cursorRef = useRef<{ x: number; y: number } | null>(null); // keyboard cursor
 
   // HUD state (updated from the loop only when a value changes)
   const [gold, setGold] = useState(START_GOLD);
@@ -107,8 +107,10 @@ export default function Game({
     setGold(goldRef.current);
   };
 
-  // preload the player's flag and a handful of enemy flags up front
+  // preload the player's flag and a handful of enemy flags up front, and pick a
+  // per-game seed so invader lineups differ between playthroughs
   useEffect(() => {
+    seedRef.current = Math.floor(Math.random() * pool.current.length);
     loadFlagImage(code).catch(() => {});
     pool.current.slice(0, 30).forEach((c) => loadFlagImage(c.code).catch(() => {}));
   }, [code]);
@@ -117,7 +119,7 @@ export default function Game({
   const startWave = useCallback(() => {
     if (phaseRef.current !== "ready") return;
     const w = waveRef.current;
-    const fresh = spawnWave(w, pool.current);
+    const fresh = spawnWave(w, pool.current, 1.6, seedRef.current);
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
     setPhase("wave");
@@ -131,6 +133,7 @@ export default function Game({
     projectiles.current = [];
     time.current = 0;
     nextTowerId.current = 1;
+    seedRef.current = Math.floor(Math.random() * pool.current.length);
     goldRef.current = START_GOLD;
     livesRef.current = START_LIVES;
     waveRef.current = 1;
@@ -214,6 +217,7 @@ export default function Game({
         projectiles: projectiles.current,
         selectedId: selectedIdRef.current,
         buildType: buildTypeRef.current,
+        cursor: cursorRef.current,
       });
       raf = requestAnimationFrame(frame);
     };
@@ -224,41 +228,83 @@ export default function Game({
     };
   }, [code]);
 
-  // ---- pointer: build / select ------------------------------------------
+  // ---- build / select (shared by pointer taps and keyboard) --------------
+  const selectOrBuild = useCallback(
+    (col: number, row: number) => {
+      const existing = towers.current.find(
+        (t) => t.cell.x === col && t.cell.y === row,
+      );
+      if (existing) {
+        setSelected({ id: existing.id, type: existing.type, level: existing.level });
+        return;
+      }
+      setSelected(null);
+      const type = buildTypeRef.current;
+      if (!type) return;
+      if (!isBuildable(col, row, BLOCKED)) {
+        flash("Can't build on the path");
+        return;
+      }
+      const cost = TOWER_DEFS[type].cost;
+      if (goldRef.current < cost) {
+        flash(`Need ${cost} gold`);
+        return;
+      }
+      towers.current.push({
+        id: nextTowerId.current++,
+        type,
+        cell: { x: col, y: row },
+        level: 1,
+        cooldown: 0,
+      });
+      spendGold(cost);
+    },
+    // all reads are refs; state setters are stable
+    [],
+  );
+
   const onCanvasPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const cell = cellRef.current;
-    const col = Math.floor((e.clientX - rect.left) / cell);
-    const row = Math.floor((e.clientY - rect.top) / cell);
-
-    const existing = towers.current.find(
-      (t) => t.cell.x === col && t.cell.y === row,
+    cursorRef.current = null; // pointer play hides the keyboard cursor
+    selectOrBuild(
+      Math.floor((e.clientX - rect.left) / cell),
+      Math.floor((e.clientY - rect.top) / cell),
     );
-    if (existing) {
-      setSelected({ id: existing.id, type: existing.type, level: existing.level });
-      return;
-    }
-    setSelected(null);
-    if (!buildType) return;
-    if (!isBuildable(col, row, BLOCKED)) {
-      flash("Can't build on the path");
-      return;
-    }
-    const cost = TOWER_DEFS[buildType].cost;
-    if (goldRef.current < cost) {
-      flash(`Need ${cost} gold`);
-      return;
-    }
-    towers.current.push({
-      id: nextTowerId.current++,
-      type: buildType,
-      cell: { x: col, y: row },
-      level: 1,
-      cooldown: 0,
-    });
-    spendGold(cost);
   };
+
+  // ---- keyboard: move a build cursor, place, and pick towers -------------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (phaseRef.current === "won" || phaseRef.current === "lost") return;
+      const digit = "123456".indexOf(e.key);
+      if (digit >= 0) {
+        setSelected(null);
+        setBuildType(TOWER_ORDER[digit]);
+        return;
+      }
+      const cur = cursorRef.current ?? { x: 6, y: 4 };
+      let { x, y } = cur;
+      if (e.key === "ArrowLeft") x = Math.max(0, x - 1);
+      else if (e.key === "ArrowRight") x = Math.min(GRID_COLS - 1, x + 1);
+      else if (e.key === "ArrowUp") y = Math.max(0, y - 1);
+      else if (e.key === "ArrowDown") y = Math.min(GRID_ROWS - 1, y + 1);
+      else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        selectOrBuild(cur.x, cur.y);
+        return;
+      } else if (e.key === "Escape") {
+        cursorRef.current = null;
+        setSelected(null);
+        return;
+      } else return;
+      e.preventDefault();
+      cursorRef.current = { x, y };
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectOrBuild]);
 
   const doUpgrade = () => {
     const id = selectedIdRef.current;
@@ -482,198 +528,3 @@ function Stat({
   );
 }
 
-// ---- canvas rendering ----------------------------------------------------
-
-interface DrawState {
-  code: string;
-  enemies: Enemy[];
-  towers: Tower[];
-  projectiles: Projectile[];
-  selectedId: number | null;
-  buildType: TowerType | null;
-}
-
-const toPx = (v: Vec2, cell: number): Vec2 => ({
-  x: (v.x + 0.5) * cell,
-  y: (v.y + 0.5) * cell,
-});
-
-function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) {
-  const w = cell * GRID_COLS;
-  const h = cell * GRID_ROWS;
-  ctx.clearRect(0, 0, w, h);
-
-  // background
-  ctx.fillStyle = "#08090c";
-  ctx.fillRect(0, 0, w, h);
-
-  // subtle grid
-  ctx.strokeStyle = "rgba(255,255,255,0.035)";
-  ctx.lineWidth = 1;
-  for (let c = 0; c <= GRID_COLS; c++) {
-    ctx.beginPath();
-    ctx.moveTo(c * cell, 0);
-    ctx.lineTo(c * cell, h);
-    ctx.stroke();
-  }
-  for (let r = 0; r <= GRID_ROWS; r++) {
-    ctx.beginPath();
-    ctx.moveTo(0, r * cell);
-    ctx.lineTo(w, r * cell);
-    ctx.stroke();
-  }
-
-  // path road
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(56,189,248,0.12)";
-  ctx.lineWidth = cell * 0.82;
-  strokePath(ctx, cell);
-  ctx.strokeStyle = "rgba(56,189,248,0.28)";
-  ctx.lineWidth = cell * 0.66;
-  strokePath(ctx, cell);
-
-  // towers
-  for (const t of s.towers) {
-    const p = toPx(t.cell, cell);
-    const stats = towerStats(t.type, t.level);
-    const def = TOWER_DEFS[t.type];
-    if (t.id === s.selectedId) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
-      ctx.fillStyle = hexA(def.color, 0.08);
-      ctx.fill();
-      ctx.strokeStyle = hexA(def.color, 0.5);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-    const rad = cell * 0.34;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
-    ctx.fillStyle = "#12141a";
-    ctx.fill();
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = def.color;
-    ctx.stroke();
-    ctx.fillStyle = def.color;
-    ctx.font = `${Math.round(cell * 0.42)}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(def.icon, p.x, p.y + 1);
-    // level pips
-    for (let i = 0; i < t.level; i++) {
-      ctx.beginPath();
-      ctx.arc(p.x - rad + 5 + i * 6, p.y + rad - 3, 2, 0, Math.PI * 2);
-      ctx.fillStyle = def.color;
-      ctx.fill();
-    }
-  }
-
-  // projectiles
-  for (const pr of s.projectiles) {
-    const a = toPx(pr.from, cell);
-    const b = toPx(pr.to, cell);
-    const col = TOWER_DEFS[pr.type].color;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = pr.type === "sniper" ? 2.5 : pr.type === "laser" ? 3 : 2;
-    ctx.globalAlpha = Math.min(1, pr.ttl * 6);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    if (pr.type === "tesla") {
-      const mx = (a.x + b.x) / 2 + (Math.random() - 0.5) * cell * 0.3;
-      const my = (a.y + b.y) / 2 + (Math.random() - 0.5) * cell * 0.3;
-      ctx.lineTo(mx, my);
-    }
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // base marble (player's country)
-  drawMarble(ctx, toPx(BASE_CELL, cell), cell * 0.46, s.code, true);
-
-  // enemies
-  for (const e of s.enemies) {
-    if (e.dist < 0) continue; // still queued off-screen
-    const p = toPx(e.pos, cell);
-    drawMarble(ctx, p, cell * 0.34, e.code, false);
-    // hp bar
-    const bw = cell * 0.6;
-    const frac = Math.max(0, e.hp / e.maxHp);
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(p.x - bw / 2, p.y - cell * 0.5, bw, 4);
-    ctx.fillStyle = frac > 0.5 ? "#34d399" : frac > 0.25 ? "#fbbf24" : "#f87171";
-    ctx.fillRect(p.x - bw / 2, p.y - cell * 0.5, bw * frac, 4);
-  }
-}
-
-function strokePath(ctx: CanvasRenderingContext2D, cell: number) {
-  ctx.beginPath();
-  WAYPOINTS.forEach((wp, i) => {
-    const p = toPx(wp, cell);
-    if (i === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
-  ctx.stroke();
-}
-
-// glossy flag marble: clipped flag + radial shading + specular highlight
-function drawMarble(
-  ctx: CanvasRenderingContext2D,
-  p: Vec2,
-  r: number,
-  code: string,
-  isBase: boolean,
-) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.clip();
-
-  const img = getFlagImage(code);
-  if (img) {
-    const nw = img.naturalWidth || 640;
-    const nh = img.naturalHeight || 480;
-    const scale = Math.max((2 * r) / nw, (2 * r) / nh);
-    const iw = nw * scale;
-    const ih = nh * scale;
-    ctx.drawImage(img, p.x - iw / 2, p.y - ih / 2, iw, ih);
-  } else {
-    ctx.fillStyle = "#475569";
-    ctx.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
-  }
-
-  // spherical shading: dark rim
-  const shade = ctx.createRadialGradient(
-    p.x - r * 0.3,
-    p.y - r * 0.3,
-    r * 0.1,
-    p.x,
-    p.y,
-    r,
-  );
-  shade.addColorStop(0, "rgba(255,255,255,0.15)");
-  shade.addColorStop(0.6, "rgba(0,0,0,0)");
-  shade.addColorStop(1, "rgba(0,0,0,0.55)");
-  ctx.fillStyle = shade;
-  ctx.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
-  ctx.restore();
-
-  // specular highlight
-  ctx.beginPath();
-  ctx.arc(p.x - r * 0.32, p.y - r * 0.34, r * 0.22, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.fill();
-
-  // outline
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.lineWidth = isBase ? 3 : 1.5;
-  ctx.strokeStyle = isBase ? "#38bdf8" : "rgba(255,255,255,0.35)";
-  ctx.stroke();
-}
-
-function hexA(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}

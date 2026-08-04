@@ -34,6 +34,7 @@ import {
   WAYPOINTS,
   BASE_CELL,
 } from "../lib/game/map.ts";
+import { dist, hexA } from "../lib/game/math.ts";
 import type { Enemy, Tower } from "../lib/game/types.ts";
 
 // ---- countries -----------------------------------------------------------
@@ -231,10 +232,26 @@ test("resetting id counters makes a replay start enemy/projectile ids at 1", () 
 
 test("projectiles expire once their ttl runs out", () => {
   const live = ageProjectiles(
-    [{ id: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, targetId: 1, type: "laser", ttl: 0.1 }],
+    [{ id: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, targetId: 1, type: "laser", ttl: 0.1, jitter: 0 }],
     0.2,
   );
   assert.equal(live.length, 0);
+});
+
+test("seeded spawn is deterministic per seed and varies across seeds", () => {
+  const a = spawnWave(1, COUNTRIES, 1.6, 0).map((e) => e.code);
+  const aAgain = spawnWave(1, COUNTRIES, 1.6, 0).map((e) => e.code);
+  const b = spawnWave(1, COUNTRIES, 1.6, 50).map((e) => e.code);
+  assert.deepEqual(a, aAgain, "same seed -> same lineup");
+  assert.notDeepEqual(a, b, "different seed -> different lineup");
+});
+
+// ---- math ----------------------------------------------------------------
+
+test("shared math helpers: dist and hexA", () => {
+  assert.equal(dist({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+  assert.equal(dist({ x: 1, y: 1 }, { x: 1, y: 1 }), 0);
+  assert.equal(hexA("#ff8800", 0.5), "rgba(255,136,0,0.5)");
 });
 
 // ---- map -----------------------------------------------------------------

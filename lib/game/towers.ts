@@ -1,4 +1,5 @@
 import type { Enemy, Tower, TowerType, Vec2 } from "./types.ts";
+import { dist } from "./math.ts";
 
 export const MAX_LEVEL = 3;
 
@@ -115,20 +116,31 @@ export const TOWER_ORDER: TowerType[] = [
   "sniper",
 ];
 
+// There are only 6 types x 3 levels = 18 possible stat blocks, and towerStats is
+// called several times per tower per frame, so memoize into a small lookup built
+// lazily once instead of allocating a fresh spread object on every call.
+const STATS_CACHE = new Map<string, TowerDef>();
+
 /** Per-level stat multiplier: +45% damage and +12% range per level above 1. */
 export function towerStats(type: TowerType, level: number): TowerDef {
-  const base = TOWER_DEFS[type];
   const lv = Math.max(1, Math.min(MAX_LEVEL, level));
+  const key = `${type}${lv}`;
+  const cached = STATS_CACHE.get(key);
+  if (cached) return cached;
+
+  const base = TOWER_DEFS[type];
   const dmgMul = 1 + 0.45 * (lv - 1);
   const rangeMul = 1 + 0.12 * (lv - 1);
   const rateMul = 1 + 0.15 * (lv - 1);
-  return {
+  const stats: TowerDef = {
     ...base,
     damage: Math.round(base.damage * dmgMul),
     range: +(base.range * rangeMul).toFixed(2),
     fireRate: +(base.fireRate * rateMul).toFixed(2),
     chain: base.chain > 0 ? base.chain + (lv - 1) : 0,
   };
+  STATS_CACHE.set(key, stats);
+  return stats;
 }
 
 /** Cost to upgrade from the given current level to the next. */
@@ -148,8 +160,6 @@ export const towerCenter = (t: Tower): Vec2 => ({
   x: t.cell.x,
   y: t.cell.y,
 });
-
-const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /**
  * Choose the primary target for a tower: the enemy in range that is furthest

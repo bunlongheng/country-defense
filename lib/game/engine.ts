@@ -1,4 +1,5 @@
 import type { Enemy, Projectile, Tower } from "./types.ts";
+import { dist } from "./math.ts";
 import { pathLength, pointAtDistance } from "./map.ts";
 import {
   enemiesInRadius,
@@ -78,12 +79,13 @@ export function fireTowers(
     // primary hit
     applyHit(target, stats.damage, stats.slow, time);
     projectiles.push({
-      id: projId++,
+      id: projId,
       from,
       to: { ...target.pos },
       targetId: target.id,
       type: tower.type,
       ttl: tower.type === "laser" ? 0.08 : 0.18,
+      jitter: boltJitter(projId++),
     });
 
     // cannon splash: everyone near the target takes the hit too
@@ -102,18 +104,25 @@ export function fireTowers(
       for (const e of arcs) {
         applyHit(e, Math.round(stats.damage * 0.7), stats.slow, time);
         projectiles.push({
-          id: projId++,
+          id: projId,
           from: prev,
           to: { ...e.pos },
           targetId: e.id,
           type: "tesla",
           ttl: 0.12,
+          jitter: boltJitter(projId++),
         });
         prev = e.pos;
       }
     }
   }
   return { projectiles };
+}
+
+// Deterministic per-projectile bolt offset (-0.3..0.3) so tesla arcs look jagged
+// but never re-randomize every frame (which tied flicker speed to refresh rate).
+function boltJitter(id: number): number {
+  return (((id * 9301 + 49297) % 233280) / 233280 - 0.5) * 0.6;
 }
 
 function applyHit(enemy: Enemy, damage: number, slow: number, time: number) {
@@ -123,9 +132,6 @@ function applyHit(enemy: Enemy, damage: number, slow: number, time: number) {
     enemy.slowUntil = time + FROST_DURATION;
   }
 }
-
-const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-  Math.hypot(a.x - b.x, a.y - b.y);
 
 export interface ReapResult {
   survivors: Enemy[];

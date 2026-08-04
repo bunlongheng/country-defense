@@ -43,4 +43,5 @@ export interface Projectile {
   targetId: number;
   type: TowerType;
   ttl: number; // seconds of visible life
+  jitter: number; // deterministic bolt-offset seed for tesla arcs (-0.3..0.3)
 }

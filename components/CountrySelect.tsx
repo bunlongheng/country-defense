@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
   COUNTRIES,
@@ -10,18 +9,7 @@ import {
 } from "@/lib/countries";
 import { startMenuMusic, stopMenuMusic } from "@/lib/game/music";
 import { Dices } from "lucide-react";
-
-// The WebGL marble is client-only and heavy; load it lazily so the picker paints
-// instantly and the 3D bundle never blocks first render. While it loads (or if
-// WebGL is unavailable) show a flat flag disc so the hero is never blank.
-const FlagMarble = dynamic(() => import("./FlagMarble"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="h-4/5 w-4/5 animate-pulse rounded-full bg-white/10 ring-1 ring-white/20" />
-    </div>
-  ),
-});
+import FlagMarble2D from "./FlagMarble2D";
 
 export default function CountrySelect({
   onStart,
@@ -60,7 +48,7 @@ export default function CountrySelect({
         <div className="relative aspect-square w-full max-w-[340px]">
           <div className="absolute inset-0 rounded-full bg-cyan-500/10 blur-3xl" />
           <div className="relative h-full w-full">
-            <FlagMarble code={code} spin />
+            <FlagMarble2D code={code} />
           </div>
         </div>
 

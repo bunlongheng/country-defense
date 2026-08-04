@@ -8,5 +8,5 @@ export default function Home() {
   const [code, setCode] = useState<string | null>(null);
 
   if (!code) return <CountrySelect onStart={setCode} />;
-  return <Game code={code} onExit={() => setCode(null)} />;
+  return <Game code={code} />;
 }

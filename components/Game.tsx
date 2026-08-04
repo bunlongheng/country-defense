@@ -85,12 +85,7 @@ const MENU_AROUND: [number, number][] = [
 
 type Phase = "ready" | "wave" | "won" | "lost";
 
-export default function Game({
-  code,
-}: {
-  code: string;
-  onExit: () => void;
-}) {
+export default function Game({ code }: { code: string }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);

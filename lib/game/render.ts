@@ -600,10 +600,10 @@ function towerFlag(
     ctx.fillRect(fx, fy, w, h);
     return;
   }
-  const nw = img.naturalWidth || 640;
-  const nh = img.naturalHeight || 480;
+  // Draw the FULL flag into each vertical column via a clip, shifting the column
+  // vertically for the ripple. Drawing the whole image (not a source sub-rect)
+  // avoids the SVG sub-rectangle sampling bug that only showed the canton.
   const cols = 14;
-  const colW = nw / cols;
   const dw = w / cols;
   const amp = h * 0.24;
   for (let i = 0; i < cols; i++) {
@@ -611,11 +611,15 @@ function towerFlag(
     const ph = time * 6 - i * 0.7 + phase;
     const yo = Math.sin(ph) * amp * t2; // vertical ripple, biggest at the free end
     const dx = fx + i * dw;
-    ctx.drawImage(img, i * colW, 0, colW, nh, dx, fy + yo, dw + 0.7, h);
-    // light fold shading - kept subtle so the flag's real colours still read
-    const sh = Math.cos(ph) * 0.18 * (0.4 + t2);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(dx, fy - amp * 1.6, dw + 1, h + amp * 3.2);
+    ctx.clip();
+    ctx.drawImage(img, fx, fy + yo, w, h); // whole flag, shifted, clipped to the column
+    const sh = Math.cos(ph) * 0.18 * (0.4 + t2); // subtle fold light
     ctx.fillStyle = sh >= 0 ? `rgba(255,255,255,${sh})` : `rgba(0,0,0,${-sh})`;
-    ctx.fillRect(dx, fy + yo, dw + 0.7, h);
+    ctx.fillRect(dx, fy + yo, dw + 1, h);
+    ctx.restore();
   }
 }
 

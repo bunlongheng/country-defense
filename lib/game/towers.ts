@@ -72,7 +72,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     cost: 90,
     range: 6,
     damage: 55,
-    fireRate: 0.6,
+    fireRate: 0.33, // ~1 shot every 3s - a slow, hard-hitting sniper
     splash: 0,
     slow: 0,
     chain: 0,

@@ -85,8 +85,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "✦",
     cost: 60,
     range: 2,
-    damage: 6,
-    fireRate: 4.5, // still the fastest, but 9/s solo-cleared whole waves
+    damage: 4, // least damage per shot on purpose - it fires so fast it'd be OP otherwise
+    fireRate: 4.5, // still the fastest gun, just low per-shot so ~18 dps, not overpowered
     splash: 0,
     slow: 0,
     chain: 0,

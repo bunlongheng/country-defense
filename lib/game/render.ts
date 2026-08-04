@@ -585,9 +585,11 @@ function drawTower(
   towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id);
 }
 
-// A small cloth flag on a pole that ripples on a travelling sine. Sliced into
-// horizontal bands (each samples the FULL flag width) so the whole flag reads,
-// then each band is nudged sideways + a touch vertically to sell the wave.
+// A realistic waving flag on a pole. The flag is sliced into VERTICAL columns
+// and each column is shifted VERTICALLY along a travelling sine (amplitude grows
+// toward the free end), so the top AND bottom edges ripple like cloth. Each
+// column is then lit by the wave slope - crests catch light, troughs fall into
+// shadow - which sells the 3D fold.
 function towerFlag(
   ctx: CanvasRenderingContext2D,
   code: string,
@@ -597,23 +599,24 @@ function towerFlag(
   time: number,
   phase: number,
 ) {
-  const poleTop = baseY - R * 1.35;
-  ctx.strokeStyle = "#e5e7eb";
-  ctx.lineWidth = Math.max(1.4, R * 0.055);
+  const poleTop = baseY - R * 1.5;
+  // pole
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = Math.max(1.4, R * 0.05);
   ctx.beginPath();
   ctx.moveTo(baseX, baseY);
   ctx.lineTo(baseX, poleTop);
   ctx.stroke();
-  ctx.fillStyle = "#fde047"; // gold finial
+  ctx.fillStyle = "#fbbf24"; // gold finial
   ctx.beginPath();
-  ctx.arc(baseX, poleTop, R * 0.06, 0, Math.PI * 2);
+  ctx.arc(baseX, poleTop, R * 0.055, 0, Math.PI * 2);
   ctx.fill();
 
   const img = getFlagImage(code);
-  const w = R * 0.9;
-  const h = R * 0.58;
+  const w = R * 1.05;
+  const h = R * 0.62;
   const fx = baseX + ctx.lineWidth * 0.5;
-  const fy = poleTop;
+  const fy = poleTop + R * 0.02;
   if (!img) {
     ctx.fillStyle = "#94a3b8";
     ctx.fillRect(fx, fy, w, h);
@@ -621,17 +624,21 @@ function towerFlag(
   }
   const nw = img.naturalWidth || 640;
   const nh = img.naturalHeight || 480;
-  const bands = 10;
-  const bh = nh / bands;
-  for (let j = 0; j < bands; j++) {
-    const t2 = j / (bands - 1);
-    const shift = Math.sin(time * 5.5 + j * 0.6 + phase) * w * 0.08;
-    const rise = Math.cos(time * 5.5 + j * 0.6 + phase) * h * 0.05 * t2;
-    ctx.drawImage(img, 0, j * bh, nw, bh, fx + shift, fy + (j * h) / bands + rise, w, h / bands + 0.7);
+  const cols = 14;
+  const colW = nw / cols;
+  const dw = w / cols;
+  const amp = h * 0.24;
+  for (let i = 0; i < cols; i++) {
+    const t2 = i / (cols - 1); // 0 at the pole, 1 at the free end
+    const ph = time * 6 - i * 0.7 + phase;
+    const yo = Math.sin(ph) * amp * t2; // vertical ripple, biggest at the free end
+    const dx = fx + i * dw;
+    ctx.drawImage(img, i * colW, 0, colW, nh, dx, fy + yo, dw + 0.7, h);
+    // fold lighting: crest (rising slope) catches light, trough darkens
+    const sh = Math.cos(ph) * 0.4 * (0.35 + t2);
+    ctx.fillStyle = sh >= 0 ? `rgba(255,255,255,${sh})` : `rgba(0,0,0,${-sh})`;
+    ctx.fillRect(dx, fy + yo, dw + 0.7, h);
   }
-  ctx.strokeStyle = "rgba(0,0,0,0.3)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(fx, fy, w, h);
 }
 
 // Ice casing for a frozen enemy: a pale blue wash plus a few white crystals.

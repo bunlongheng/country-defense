@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Waves,
+  Coins,
+  Skull as SkullIcon,
+  Pause as PauseIcon,
+  Play as PlayIcon,
+  Volume2,
+  VolumeX,
+  Settings,
+} from "lucide-react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
 import {
@@ -80,56 +90,17 @@ const MENU_AROUND: [number, number][] = [
   [-1, -1],
 ];
 
-// Inline SVG icons (no emoji, no external requests - keeps the CSP at 'self').
+// Icons from the lucide-react library (bundled SVGs, no external requests).
 const IC = "h-4 w-4 sm:h-5 sm:w-5";
 const Icon = {
-  Wave: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
-      <path d="M2 14c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
-    </svg>
-  ),
-  Coin: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7.2v9.6M14.3 9.2a2.5 2 0 0 0-4.6 1c0 2.6 4.8 1.1 4.8 3.6a2.5 2 0 0 1-4.6 1" fill="none" stroke="#7c4a03" strokeWidth={1.6} strokeLinecap="round" />
-    </svg>
-  ),
-  Skull: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <path d="M12 2a8 8 0 0 0-8 8v3.2l1.6 1.9V19h2.3v-2h1.1v2h2v-2h1.1v2h2.3v-3.9L20 13.2V10a8 8 0 0 0-8-8Z" />
-      <circle cx="9" cy="11" r="1.6" fill="#0b0e14" />
-      <circle cx="15" cy="11" r="1.6" fill="#0b0e14" />
-    </svg>
-  ),
-  Pause: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <rect x="6" y="5" width="4" height="14" rx="1" />
-      <rect x="14" y="5" width="4" height="14" rx="1" />
-    </svg>
-  ),
-  Play: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <path d="M7 5l12 7-12 7z" />
-    </svg>
-  ),
-  SoundOn: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <path d="M4 9v6h4l5 4V5L8 9H4z" />
-      <path d="M16.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-    </svg>
-  ),
-  SoundOff: () => (
-    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
-      <path d="M4 9v6h4l5 4V5L8 9H4z" />
-      <path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-    </svg>
-  ),
-  Gear: () => (
-    <svg viewBox="0 0 16 16" className={IC} fill="currentColor">
-      <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z" />
-    </svg>
-  ),
+  Wave: () => <Waves className={IC} />,
+  Coin: () => <Coins className={IC} />,
+  Skull: () => <SkullIcon className={IC} />,
+  Pause: () => <PauseIcon className={IC} />,
+  Play: () => <PlayIcon className={IC} />,
+  SoundOn: () => <Volume2 className={IC} />,
+  SoundOff: () => <VolumeX className={IC} />,
+  Gear: () => <Settings className={IC} />,
 };
 
 type Phase = "ready" | "wave" | "won" | "lost";

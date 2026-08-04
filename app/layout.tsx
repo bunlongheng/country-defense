@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Country Defense",
   description:
-    "Pick your country as a glossy 3D flag marble and defend it from waves of invaders with 6 upgradeable towers. A clean, kid-friendly tower defense game.",
+    "Pick your country as a glossy 3D flag marble and defend it from waves of invaders with 7 upgradeable towers. A clean, kid-friendly tower defense game.",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Country Defense" },
 };
 
@@ -26,7 +27,7 @@ export const viewport = {
   viewportFit: "cover" as const,
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"

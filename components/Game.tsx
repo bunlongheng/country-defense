@@ -108,6 +108,8 @@ export default function Game({ code }: { code: string }) {
   // HUD state (updated from the loop only when a value changes)
   const [gold, setGold] = useState(START_GOLD);
   const [wave, setWave] = useState(1);
+  const [kills, setKills] = useState(0); // total invaders terminated
+  const killsRef = useRef(0);
   const [phase, setPhaseState] = useState<Phase>("ready");
   const [buildType, setBuildType] = useState<TowerType | null>("laser");
   const [speed, setSpeed] = useState(1);
@@ -229,6 +231,8 @@ export default function Game({ code }: { code: string }) {
     goldRef.current = START_GOLD;
     livesRef.current = START_LIVES;
     waveRef.current = 1;
+    killsRef.current = 0;
+    setKills(0);
     setGold(START_GOLD);
     setWave(1);
     setSelected(null);
@@ -297,6 +301,8 @@ export default function Game({ code }: { code: string }) {
       }
       if (reaped.kills > 0) {
         playKill();
+        killsRef.current += reaped.kills;
+        setKills(killsRef.current);
         for (const e of killed) {
           defeatedRef.current[e.code] = (defeatedRef.current[e.code] ?? 0) + 1;
           spawnExplosion(particlesRef.current, e.pos.x, e.pos.y, "#f97316");
@@ -609,10 +615,15 @@ export default function Game({ code }: { code: string }) {
             <span className="ml-1 font-bold text-white/70">· {countdown}s</span>
           )}
         </span>
-        {/* gold - center */}
-        <span className="text-base font-black text-amber-300" title="Gold">
-          🪙 {gold}
-        </span>
+        {/* gold + terminated count - center */}
+        <div className="flex items-center gap-4">
+          <span className="text-base font-black text-amber-300" title="Gold">
+            🪙 {gold}
+          </span>
+          <span className="text-base font-black text-white/80" title="Terminated">
+            💀 {kills}
+          </span>
+        </div>
         {/* controls - top right (health now lives as a bar over the base) */}
         <div className="flex items-center gap-2">
           <button

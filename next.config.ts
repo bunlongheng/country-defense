@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
-// Next dev (Turbopack/HMR) evaluates code via eval(); production never does.
-// iOS Safari strictly enforces CSP, so the dev bundle needs 'unsafe-eval' to run
-// on a phone. Production keeps script-src locked to 'self'.
+// Next dev (Turbopack/HMR) evaluates code via eval(); production never does, so
+// 'unsafe-eval' is dev-only. 'unsafe-inline' in script-src is required because
+// Next.js injects inline bootstrap/hydration scripts (a nonce-based CSP would need
+// per-request middleware, which a fully static export cannot use). The app renders
+// no user-supplied HTML, so there is no injection surface for it to protect against.
 const isDev = process.env.NODE_ENV !== "production";
 
 // blob: is required for the WebGL texture pipeline three.js uses for the marbles.
@@ -15,6 +17,7 @@ const csp = [
   "worker-src 'self' blob:",
   "font-src 'self'",
   "connect-src 'self'",
+  "object-src 'none'",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -44,8 +47,10 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       {
+        // Never cache the entry HTML so a new deploy is picked up immediately;
+        // the hashed /_next/static assets it references stay immutably cached.
         source: "/",
-        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+        headers: [{ key: "Cache-Control", value: "no-store" }],
       },
     ];
   },

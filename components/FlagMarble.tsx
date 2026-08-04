@@ -15,6 +15,8 @@ function Sphere({ code, spin }: { code: string; spin: boolean }) {
   // recompile, otherwise the flag never appears and the sphere stays plain.
   useEffect(() => {
     if (matRef.current) matRef.current.needsUpdate = true;
+    // free the GPU texture when it is replaced or the marble unmounts
+    return () => texture?.dispose();
   }, [texture]);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ function Sphere({ code, spin }: { code: string; spin: boolean }) {
 
   return (
     <mesh ref={meshRef} castShadow>
-      <sphereGeometry args={[1, 96, 96]} />
+      <sphereGeometry args={[1, 48, 48]} />
       <meshPhysicalMaterial
         ref={matRef}
         map={texture ?? undefined}

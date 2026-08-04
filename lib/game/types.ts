@@ -44,16 +44,3 @@ export interface Projectile {
   type: TowerType;
   ttl: number; // seconds of visible life
 }
-
-export type Phase = "select" | "ready" | "wave" | "won" | "lost";
-
-export interface GameState {
-  phase: Phase;
-  wave: number;
-  lives: number;
-  gold: number;
-  time: number; // elapsed game seconds
-  enemies: Enemy[];
-  towers: Tower[];
-  projectiles: Projectile[];
-}

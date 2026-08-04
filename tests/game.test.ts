@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 
 import { COUNTRIES, searchCountries, findCountry } from "../lib/countries.ts";
-import { waveStats, spawnWave, ENEMIES_PER_WAVE } from "../lib/game/waves.ts";
+import {
+  waveStats,
+  spawnWave,
+  waveClearBonus,
+  resetEnemyIds,
+  ENEMIES_PER_WAVE,
+} from "../lib/game/waves.ts";
 import {
   towerStats,
   upgradeCost,
@@ -18,6 +24,7 @@ import {
   fireTowers,
   reapDead,
   ageProjectiles,
+  resetProjectileIds,
 } from "../lib/game/engine.ts";
 import {
   pathLength,
@@ -169,6 +176,57 @@ test("reapDead awards gold for kills and keeps the living", () => {
   assert.equal(res.gold, 12);
   assert.equal(res.kills, 1);
   assert.equal(res.survivors.length, 1);
+});
+
+test("frost slow expires after its duration - enemy resumes full speed", () => {
+  const len = pathLength();
+  const normal = mkEnemy(1, { x: 0, y: 1 }, 1, 1);
+  const expired = mkEnemy(2, { x: 0, y: 1 }, 1, 1);
+  expired.slowMul = 0.5;
+  expired.slowUntil = 1; // slow already lapsed at time=2
+  moveEnemies([normal], 1, 2, len);
+  moveEnemies([expired], 1, 2, len);
+  assert.equal(expired.dist, normal.dist, "expired slow no longer reduces speed");
+});
+
+test("splash and chain apply their exact damage factors", () => {
+  const cannon: Tower = { id: 1, type: "cannon", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const dmg = towerStats("cannon", 1).damage;
+  const primary = mkEnemy(2, { x: 5, y: 5 }, 6, 500);
+  const neighbour = mkEnemy(3, { x: 5.3, y: 5 }, 5, 500);
+  fireTowers([cannon], [primary, neighbour], 0.016, 0);
+  assert.equal(primary.hp, 500 - dmg, "primary takes full damage");
+  assert.equal(neighbour.hp, 500 - Math.round(dmg * 0.6), "splash is 60%");
+});
+
+test("tesla chain never hits more than its chain count of extra foes", () => {
+  const tesla: Tower = { id: 1, type: "tesla", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const chain = towerStats("tesla", 1).chain; // 3 at level 1
+  const primary = mkEnemy(1, { x: 5, y: 5 }, 9, 999);
+  const extras = Array.from({ length: 6 }, (_, i) =>
+    mkEnemy(10 + i, { x: 5 + (i + 1) * 0.15, y: 5 }, 5, 999),
+  );
+  fireTowers([tesla], [primary, ...extras], 0.016, 0);
+  const hit = extras.filter((e) => e.hp < 999).length;
+  assert.ok(hit <= chain, `at most ${chain} extras hit, got ${hit}`);
+  assert.ok(hit > 0, "chain reached at least one extra");
+});
+
+test("waveClearBonus grows every wave", () => {
+  assert.equal(waveClearBonus(1), 40);
+  assert.ok(waveClearBonus(2) > waveClearBonus(1));
+  assert.ok(waveClearBonus(12) > waveClearBonus(6));
+});
+
+test("resetting id counters makes a replay start enemy/projectile ids at 1", () => {
+  resetEnemyIds();
+  const first = spawnWave(1, COUNTRIES);
+  assert.equal(first[0].id, 1);
+  spawnWave(2, COUNTRIES); // advance the counter
+  resetEnemyIds();
+  const replay = spawnWave(1, COUNTRIES);
+  assert.equal(replay[0].id, 1, "ids restart after reset");
+  resetProjectileIds(); // smoke: callable, no throw
 });
 
 test("projectiles expire once their ttl runs out", () => {

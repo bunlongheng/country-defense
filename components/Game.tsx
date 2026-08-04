@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { COUNTRIES, findCountry } from "@/lib/countries";
+import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { getFlagImage, loadFlagImage } from "@/lib/flagImage";
 import type { Enemy, Projectile, Tower, TowerType, Vec2 } from "@/lib/game/types";
 import {
@@ -50,7 +50,7 @@ export default function Game({
   code: string;
   onExit: () => void;
 }) {
-  const country = findCountry(code)!;
+  const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // mutable simulation state (kept in refs so the rAF loop never re-renders)
@@ -80,6 +80,14 @@ export default function Game({
   const waveRef = useRef(1);
   const selectedIdRef = useRef<number | null>(null);
   const buildTypeRef = useRef<TowerType | null>("laser");
+  // transient feedback banner (e.g. "Not enough gold") so a rejected tap is never silent
+  const [hint, setHint] = useState("");
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flash = (msg: string) => {
+    setHint(msg);
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    hintTimer.current = setTimeout(() => setHint(""), 1400);
+  };
 
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null;
@@ -233,9 +241,15 @@ export default function Game({
     }
     setSelected(null);
     if (!buildType) return;
-    if (!isBuildable(col, row, BLOCKED)) return;
+    if (!isBuildable(col, row, BLOCKED)) {
+      flash("Can't build on the path");
+      return;
+    }
     const cost = TOWER_DEFS[buildType].cost;
-    if (goldRef.current < cost) return;
+    if (goldRef.current < cost) {
+      flash(`Need ${cost} gold`);
+      return;
+    }
     towers.current.push({
       id: nextTowerId.current++,
       type: buildType,
@@ -266,15 +280,40 @@ export default function Game({
     setSelected(null);
   };
 
+  // Confirm before abandoning a battle in progress so one stray tap does not wipe a run.
+  const handleExit = () => {
+    if (
+      (phaseRef.current === "wave" || towers.current.length > 0) &&
+      typeof window !== "undefined" &&
+      !window.confirm("Leave the battle? Your progress will be lost.")
+    ) {
+      return;
+    }
+    onExit();
+  };
+
+  // clean up the hint timer on unmount
+  useEffect(() => () => {
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+  }, []);
+
   const ws = waveStats(wave);
 
+  if (!country) return null;
+
   return (
-    <div className="flex min-h-dvh flex-col bg-black text-white">
+    <div
+      className="flex min-h-dvh flex-col bg-black text-white"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
       {/* top HUD */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-3"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      >
         <button
-          onClick={onExit}
-          className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/70 active:scale-95"
+          onClick={handleExit}
+          className="min-h-11 rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 active:scale-95"
         >
           ← Change
         </button>
@@ -285,9 +324,10 @@ export default function Game({
         </div>
         <div
           className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
-          style={{ backgroundImage: `url(/flags/${code}.svg)` }}
+          style={{ backgroundImage: `url(${flagUrl(code)})` }}
           title={country.name}
-          aria-label={country.name}
+          role="img"
+          aria-label={`Defending ${country.name}`}
         />
       </div>
 
@@ -297,8 +337,19 @@ export default function Game({
           <canvas
             ref={canvasRef}
             onPointerDown={onCanvasPointer}
+            role="img"
+            aria-label="Battle map - tap an open tile to place a tower, tap a tower to upgrade it"
             className="mx-auto block touch-none rounded-2xl ring-1 ring-white/10"
           />
+
+          {/* transient feedback banner for rejected taps */}
+          {hint && (
+            <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+              <span className="rounded-full bg-rose-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg">
+                {hint}
+              </span>
+            </div>
+          )}
 
           {/* upgrade / sell panel */}
           {selected && (
@@ -316,7 +367,7 @@ export default function Game({
                     selected.level >= MAX_LEVEL ||
                     gold < upgradeCost(selected.type, selected.level)
                   }
-                  className="rounded-lg bg-cyan-400 px-3 py-1.5 text-sm font-bold text-black disabled:opacity-40"
+                  className="min-h-11 rounded-lg bg-cyan-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-40"
                 >
                   {selected.level >= MAX_LEVEL
                     ? "Maxed"
@@ -324,7 +375,7 @@ export default function Game({
                 </button>
                 <button
                   onClick={doSell}
-                  className="rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white/80"
+                  className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-sm text-white/80"
                 >
                   Sell {sellValue(selected.type, selected.level)}
                 </button>
@@ -357,19 +408,26 @@ export default function Game({
 
       {/* bottom: tower shop */}
       <div className="border-t border-white/10 p-3">
-        {phase === "ready" && (
-          <div className="mb-3 flex items-center justify-center gap-3">
-            <button
-              onClick={startWave}
-              className="rounded-full bg-emerald-400 px-6 py-2.5 font-bold text-black shadow-lg shadow-emerald-500/20 active:scale-95"
-            >
-              Start Wave {wave} ▸
-            </button>
-            <span className="text-xs text-white/40">
-              Invaders: {ws.hp} hp · faster each wave
+        {/* fixed-height control row so the shop never jumps when a wave starts */}
+        <div className="mb-3 flex h-10 items-center justify-center gap-3">
+          {phase === "ready" ? (
+            <>
+              <button
+                onClick={startWave}
+                className="min-h-11 rounded-full bg-emerald-400 px-6 py-2.5 font-bold text-black shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                Start Wave {wave} ▸
+              </button>
+              <span className="text-xs text-white/60">
+                Invaders: {ws.hp} hp · faster each wave
+              </span>
+            </>
+          ) : (
+            <span className="text-sm font-semibold text-cyan-400">
+              Wave {wave} - defend!
             </span>
-          </div>
-        )}
+          )}
+        </div>
         <div className="mx-auto grid max-w-4xl grid-cols-3 gap-2 sm:grid-cols-6">
           {TOWER_ORDER.map((type) => {
             const d = TOWER_DEFS[type];
@@ -382,7 +440,8 @@ export default function Game({
                   setSelected(null);
                   setBuildType(type);
                 }}
-                className={`flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2 transition ${
+                aria-pressed={active}
+                className={`flex min-h-11 flex-col items-center gap-0.5 rounded-xl border px-2 py-2 transition ${
                   active
                     ? "border-white bg-white/10"
                     : "border-white/10 bg-white/[0.03]"
@@ -416,7 +475,7 @@ function Stat({
   return (
     <div className="flex flex-col items-center leading-none">
       <span className={`text-lg font-black ${tone}`}>{value}</span>
-      <span className="text-[10px] uppercase tracking-wider text-white/40">
+      <span className="text-[11px] uppercase tracking-wider text-white/60">
         {label}
       </span>
     </div>

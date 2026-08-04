@@ -23,7 +23,10 @@ export function loadFlagImage(code: string): Promise<HTMLImageElement> {
   if (inflight) return inflight;
 
   const p = fetch(flagUrl(code))
-    .then((r) => r.text())
+    .then((r) => {
+      if (!r.ok) throw new Error(`flag ${code}: HTTP ${r.status}`);
+      return r.text();
+    })
     .then(
       (svg) =>
         new Promise<HTMLImageElement>((resolve, reject) => {
@@ -48,6 +51,9 @@ export function loadFlagImage(code: string): Promise<HTMLImageElement> {
           img.src = url;
         }),
     );
+  // If the fetch/decode fails, drop the in-flight entry so a later call can retry
+  // instead of being stuck on a permanently-rejected promise.
+  p.catch(() => pending.delete(code));
   pending.set(code, p);
   return p;
 }

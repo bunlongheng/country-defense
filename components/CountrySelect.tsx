@@ -10,8 +10,16 @@ import {
 } from "@/lib/countries";
 
 // The WebGL marble is client-only and heavy; load it lazily so the picker paints
-// instantly and the 3D bundle never blocks first render.
-const FlagMarble = dynamic(() => import("./FlagMarble"), { ssr: false });
+// instantly and the 3D bundle never blocks first render. While it loads (or if
+// WebGL is unavailable) show a flat flag disc so the hero is never blank.
+const FlagMarble = dynamic(() => import("./FlagMarble"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="h-4/5 w-4/5 animate-pulse rounded-full bg-white/10 ring-1 ring-white/20" />
+    </div>
+  ),
+});
 
 export default function CountrySelect({
   onStart,
@@ -43,28 +51,30 @@ export default function CountrySelect({
 
         <div className="text-center">
           <div className="text-xl font-bold text-white">{selected?.name}</div>
-          <div className="text-xs uppercase tracking-widest text-white/40">
+          <div className="text-xs font-semibold uppercase tracking-widest text-white/60">
             {selected?.region}
           </div>
         </div>
 
         <button
           onClick={() => onStart(code)}
-          className="rounded-full bg-cyan-400 px-8 py-3.5 text-base font-bold text-black shadow-lg shadow-cyan-500/30 transition active:scale-95"
+          className="min-h-11 rounded-full bg-cyan-400 px-8 py-3.5 text-base font-bold text-black shadow-lg shadow-cyan-500/30 transition active:scale-95"
         >
           Defend {selected?.name}
         </button>
-        <p className="text-xs text-white/30">Drag the marble to spin it</p>
+        <p className="text-xs text-white/55">Drag the marble to spin it</p>
       </section>
 
       {/* right: searchable grid of all 194 flags */}
       <section className="flex flex-1 flex-col border-t border-white/10 lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
         <div className="p-4">
           <input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search country or continent"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/30 outline-none focus:border-cyan-400/60"
+            aria-label="Search country or continent"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/50 outline-none focus:border-cyan-400/60"
           />
         </div>
         <div className="grid auto-rows-max grid-cols-3 gap-2 px-4 pb-6 sm:grid-cols-4 md:grid-cols-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
@@ -74,16 +84,23 @@ export default function CountrySelect({
               <button
                 key={c.code}
                 onClick={() => setCode(c.code)}
+                aria-pressed={active}
                 className={`flex flex-col items-center gap-1.5 rounded-xl border p-2 transition ${
                   active
                     ? "border-cyan-400 bg-cyan-400/10"
                     : "border-white/10 bg-white/[0.03] hover:border-white/25"
                 }`}
               >
-                <span
-                  className="h-8 w-11 rounded-md bg-white/10 bg-cover bg-center ring-1 ring-black/40"
-                  style={{ backgroundImage: `url(${flagUrl(c.code)})` }}
-                  aria-hidden
+                {/* raw <img> with loading="lazy" so offscreen flags load on scroll
+                    (a CSS background eagerly fetches all 194); next/image does not
+                    lazy-rasterize SVGs well, so a plain lazy img is the right tool */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={flagUrl(c.code)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="h-8 w-11 rounded-md bg-white/10 object-cover ring-1 ring-black/40"
                 />
                 <span className="line-clamp-1 text-center text-[11px] leading-tight text-white/70">
                   {c.name}
@@ -92,7 +109,7 @@ export default function CountrySelect({
             );
           })}
           {results.length === 0 && (
-            <p className="col-span-full py-8 text-center text-sm text-white/40">
+            <p className="col-span-full py-8 text-center text-sm text-white/60">
               No country matches “{query}”.
             </p>
           )}

@@ -1,13 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   COUNTRIES,
   searchCountries,
   findCountry,
   flagUrl,
 } from "@/lib/countries";
+import { startMenuMusic, stopMenuMusic } from "@/lib/game/music";
 
 // The WebGL marble is client-only and heavy; load it lazily so the picker paints
 // instantly and the 3D bundle never blocks first render. While it loads (or if
@@ -30,6 +31,19 @@ export default function CountrySelect({
   const [code, setCode] = useState("us");
   const results = useMemo(() => searchCountries(query), [query]);
   const selected = findCountry(code);
+
+  // Epic menu theme: browsers block audio until a gesture, so kick it off on the
+  // first tap/keypress anywhere on the picker; stop it when the picker unmounts.
+  useEffect(() => {
+    const start = () => startMenuMusic();
+    window.addEventListener("pointerdown", start, { once: true });
+    window.addEventListener("keydown", start, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+      stopMenuMusic();
+    };
+  }, []);
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:flex-row lg:overflow-hidden">

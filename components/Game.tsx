@@ -773,18 +773,21 @@ export default function Game({ code }: { code: string }) {
                 style={{ color: TOWER_DEFS[selected.type].color }}
               >
                 {TOWER_DEFS[selected.type].name}
-                <span className="flex gap-1">
+                <span className="flex gap-0.5">
                   {Array.from({ length: MAX_LEVEL }, (_, i) => (
-                    <span
+                    <svg
                       key={i}
-                      className="h-2 w-2 rounded-full"
+                      viewBox="0 0 24 24"
+                      className="h-3.5 w-3.5"
                       style={{
-                        background:
+                        fill:
                           i < selected.level
                             ? TOWER_DEFS[selected.type].color
                             : "rgba(255,255,255,0.2)",
                       }}
-                    />
+                    >
+                      <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 18l-6 3.6 1.4-6.8L2.3 9.1l6.9-.8z" />
+                    </svg>
                   ))}
                 </span>
                 <span className="text-white/60">Lv {selected.level}/{MAX_LEVEL}</span>

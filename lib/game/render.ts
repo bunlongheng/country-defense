@@ -473,11 +473,11 @@ function drawTower(
   ctx.ellipse(p.x, p.y + R * 0.72, R * 0.82, R * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // maxed (level 3) towers get a prestige gold aura around the base
+  // maxed (level 3) towers get a prestige aura in the nation's colour (like the base)
   if (t.level >= 3) {
     const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 1.7);
-    aura.addColorStop(0, "rgba(253,224,71,0.5)");
-    aura.addColorStop(1, "rgba(253,224,71,0)");
+    aura.addColorStop(0, hexA(c1, 0.55));
+    aura.addColorStop(1, hexA(c1, 0));
     ctx.fillStyle = aura;
     ctx.beginPath();
     ctx.arc(p.x, p.y, R * 1.7, 0, Math.PI * 2);

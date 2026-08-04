@@ -81,9 +81,6 @@ function background(cell: number, code: string, palette: string[]): HTMLCanvasEl
   ctx.fillStyle = hexA(accent, 0.06);
   ctx.fillRect(0, 0, w, h);
 
-  // layered mountain range across the far (top) edge
-  mountains(ctx, w, cell, accent);
-
   // soft grass mottling for texture
   for (let i = 0; i < 90; i++) {
     const x = hash(i, 3, 1) * w;
@@ -131,42 +128,6 @@ function background(cell: number, code: string, palette: string[]): HTMLCanvasEl
   return canvas;
 }
 
-function mountains(ctx: CanvasRenderingContext2D, w: number, cell: number, accent: string) {
-  const bands = [
-    { base: cell * 1.9, amp: cell * 1.1, col: "#243447" },
-    { base: cell * 1.5, amp: cell * 0.9, col: "#2c3f52" },
-    { base: cell * 1.1, amp: cell * 0.7, col: shade(accent, -0.55) },
-  ];
-  for (const b of bands) {
-    ctx.beginPath();
-    ctx.moveTo(0, b.base);
-    const peaks = 7;
-    for (let i = 0; i <= peaks; i++) {
-      const x = (i / peaks) * w;
-      const y = b.base - Math.abs(Math.sin(i * 1.7 + b.amp)) * b.amp - hash(i, 2) * b.amp * 0.5;
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(w, 0);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fillStyle = b.col;
-    ctx.fill();
-    // snow caps on the nearest range
-    if (b === bands[2]) {
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      for (let i = 1; i < peaks; i++) {
-        const x = (i / peaks) * w;
-        const y = b.base - Math.abs(Math.sin(i * 1.7 + b.amp)) * b.amp - hash(i, 2) * b.amp * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x - cell * 0.18, y + cell * 0.22);
-        ctx.lineTo(x + cell * 0.18, y + cell * 0.22);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-  }
-}
 
 function mudFlecks(ctx: CanvasRenderingContext2D, cell: number) {
   for (let i = 0; i < WAYPOINTS.length - 1; i++) {
@@ -630,7 +591,7 @@ function towerFlag(
   ctx.fill();
 
   const img = getFlagImage(code);
-  const w = R * 1.05;
+  const w = R * 0.84; // 20% shorter than before
   const h = R * 0.62;
   const fx = baseX + ctx.lineWidth * 0.5;
   const fy = poleTop + R * 0.02;
@@ -651,8 +612,8 @@ function towerFlag(
     const yo = Math.sin(ph) * amp * t2; // vertical ripple, biggest at the free end
     const dx = fx + i * dw;
     ctx.drawImage(img, i * colW, 0, colW, nh, dx, fy + yo, dw + 0.7, h);
-    // fold lighting: crest (rising slope) catches light, trough darkens
-    const sh = Math.cos(ph) * 0.4 * (0.35 + t2);
+    // light fold shading - kept subtle so the flag's real colours still read
+    const sh = Math.cos(ph) * 0.18 * (0.4 + t2);
     ctx.fillStyle = sh >= 0 ? `rgba(255,255,255,${sh})` : `rgba(0,0,0,${-sh})`;
     ctx.fillRect(dx, fy + yo, dw + 0.7, h);
   }

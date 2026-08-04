@@ -13,7 +13,7 @@ import {
 // side effects makes the whole game unit-testable.
 
 export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
-export const FREEZE_DURATION = 1; // frost freezes an enemy solid for 1s
+export const FREEZE_DURATION = 3; // frost freezes an enemy solid for 3s
 export const SLIME_SLOW_DURATION = 5; // slime's slow lingers for 5s
 const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 

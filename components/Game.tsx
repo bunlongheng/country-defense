@@ -148,7 +148,6 @@ export default function Game({ code }: { code: string }) {
   const shownCountdownRef = useRef<number | null>(null); // last countdown value pushed to HUD
   // live range/ghost preview drawn on the canvas while the honeycomb menu is open
   const previewRef = useRef<{ cell: { x: number; y: number }; type: TowerType } | null>(null);
-  const defeatedRef = useRef<Record<string, number>>({}); // code -> times defeated
   const particlesRef = useRef<Particle[]>([]); // smoke + sparks + embers
 
   // HUD state (updated from the loop only when a value changes)
@@ -162,18 +161,6 @@ export default function Game({ code }: { code: string }) {
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  // bucket of already-defeated countries, most-defeated first (small flag circles)
-  const [defeated, setDefeated] = useState<{ code: string; n: number }[]>([]);
-  // how many defeated flags fit on one line (~95% of the width); the rest -> "+N"
-  const flagW = 24; // px per flag incl. gap
-  const [maxFlags, setMaxFlags] = useState(() =>
-    typeof window !== "undefined" ? Math.max(6, Math.floor((window.innerWidth * 0.95) / flagW)) : 30,
-  );
-  useEffect(() => {
-    const calc = () => setMaxFlags(Math.max(6, Math.floor((window.innerWidth * 0.95) / flagW)));
-    window.addEventListener("resize", calc);
-    return () => window.removeEventListener("resize", calc);
-  }, []);
   // honeycomb build menu: opened by tapping an empty buildable tile
   const [menu, setMenu] = useState<{
     col: number;
@@ -255,9 +242,6 @@ export default function Game({ code }: { code: string }) {
     const fresh = spawnWave(w, pool.current, 1.6, seedRef.current);
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
-    // the defeated strip shows only THIS wave's terminations - clear it each wave
-    defeatedRef.current = {};
-    setDefeated([]);
     countdownEndRef.current = null;
     shownCountdownRef.current = null;
     setCountdown(null);
@@ -287,8 +271,6 @@ export default function Game({ code }: { code: string }) {
     setBuildType("laser");
     setMenu(null);
     previewRef.current = null;
-    defeatedRef.current = {};
-    setDefeated([]);
     setPhase("ready");
   }, []);
 
@@ -339,7 +321,7 @@ export default function Game({ code }: { code: string }) {
         playShoot(fired.projectiles[0].type, time.current);
         playImpact(time.current);
       }
-      // death puffs + defeated bucket: capture everything about to be reaped
+      // death puffs: capture everything about to be reaped for the explosions
       const killed = enemies.current.filter((e) => e.hp <= 0);
       const reaped = reapDead(enemies.current);
       enemies.current = reaped.survivors;
@@ -352,14 +334,8 @@ export default function Game({ code }: { code: string }) {
         killsRef.current += reaped.kills;
         setKills(killsRef.current);
         for (const e of killed) {
-          defeatedRef.current[e.code] = (defeatedRef.current[e.code] ?? 0) + 1;
           spawnExplosion(particlesRef.current, e.pos.x, e.pos.y, "#f97316");
         }
-        setDefeated(
-          Object.entries(defeatedRef.current)
-            .map(([code, n]) => ({ code, n }))
-            .sort((a, b) => b.n - a.n),
-        );
       }
 
       projectiles.current = ageProjectiles(projectiles.current, dt);
@@ -698,24 +674,6 @@ export default function Game({ code }: { code: string }) {
         </div>
       </div>
 
-      {/* defeated countries: one grayscale line across the full width (they're
-          dead, so desaturated). Shows every country - scrolls if it overflows. */}
-      <div className="flex h-7 items-center gap-1 overflow-hidden px-3">
-        {defeated.slice(0, maxFlags).map(({ code }) => (
-          <div
-            key={code}
-            className="h-5 w-5 shrink-0 rounded-full bg-cover bg-center opacity-70 grayscale ring-1 ring-black/40"
-            style={{ backgroundImage: `url(${flagUrl(code)})` }}
-            title={findCountry(code)?.name ?? code}
-          />
-        ))}
-        {defeated.length > maxFlags && (
-          <span className="shrink-0 pl-1 text-xs font-bold text-white/60">
-            +{defeated.length - maxFlags}
-          </span>
-        )}
-      </div>
-
       {/* arena - fills all remaining space; the board is fit to this box */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center px-1 sm:px-2">
         <div className="relative flex h-full w-full items-center justify-center">
@@ -856,7 +814,11 @@ export default function Game({ code }: { code: string }) {
 
           {/* win / lose overlay */}
           {(phase === "won" || phase === "lost") && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/80 backdrop-blur-sm">
+            <div
+              className={`absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl ${
+                phase === "lost" ? "bg-black/45" : "bg-black/80 backdrop-blur-sm"
+              }`}
+            >
               <div className="text-5xl">{phase === "won" ? "🏆" : "💥"}</div>
               <div className="text-2xl font-black">
                 {phase === "won" ? `${country.name} holds!` : `${country.name} fell`}

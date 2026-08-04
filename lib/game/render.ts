@@ -463,8 +463,8 @@ function drawTower(
   time: number,
 ) {
   const def = TOWER_DEFS[t.type];
-  // higher-level towers are physically bigger and beefier-looking
-  const R = cell * (0.32 + t.level * 0.045);
+  // level 1 is small; each upgrade makes the tower visibly bigger and beefier
+  const R = cell * (0.23 + t.level * 0.07); // lvl1 .30, lvl2 .37, lvl3 .44
   const c1 = palette[0] ?? "#64748b"; // the nation's main colour
 
   // ground shadow
@@ -472,6 +472,17 @@ function drawTower(
   ctx.beginPath();
   ctx.ellipse(p.x, p.y + R * 0.72, R * 0.82, R * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // maxed (level 3) towers get a prestige gold aura around the base
+  if (t.level >= 3) {
+    const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 1.7);
+    aura.addColorStop(0, "rgba(253,224,71,0.5)");
+    aura.addColorStop(1, "rgba(253,224,71,0)");
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R * 1.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // circular metallic armor base in the nation's colour, with a beveled rim
   const body = ctx.createRadialGradient(
@@ -559,8 +570,8 @@ function drawTower(
     star(ctx, p.x - (t.level - 1) * R * 0.13 + i * R * 0.26, p.y + R * 0.72, R * 0.085, "#fbbf24");
   }
 
-  // a small national flag WAVING on a short pole at the back of the turret
-  towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id);
+  // only a maxed (level 3) tower earns a waving national flag
+  if (t.level >= 3) towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id);
 }
 
 // A realistic waving flag on a pole. The flag is sliced into VERTICAL columns
@@ -884,6 +895,37 @@ function sphereShade(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: n
   ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
 }
 
+// Shattered look for a dead base sphere: jagged branching cracks + char marks.
+// Deterministic (sin-based jitter) so it does not shimmer frame to frame.
+function drawCracks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  ctx.strokeStyle = "rgba(15,10,8,0.9)";
+  ctx.lineCap = "round";
+  for (let c = 0; c < 6; c++) {
+    let x = cx + Math.cos(c * 1.7) * r * 0.12;
+    let y = cy + Math.sin(c * 1.7) * r * 0.12;
+    let ang = c * (Math.PI * 2) / 6 + 0.4;
+    ctx.lineWidth = r * 0.07;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      ang += Math.sin(c * 3.1 + s * 2.7) * 0.7;
+      const seg = r * 0.26;
+      x += Math.cos(ang) * seg;
+      y += Math.sin(ang) * seg;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // a few charred blotches
+  ctx.fillStyle = "rgba(20,15,12,0.55)";
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.9;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.45, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function specular(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
   ctx.beginPath();
   ctx.ellipse(cx + LIGHT.x * r * 0.75, cy + LIGHT.y * r * 0.75, r * 0.26, r * 0.17, -Math.PI / 5, 0, Math.PI * 2);
@@ -1022,11 +1064,13 @@ function drawBase(
     ctx.fillStyle = `rgba(220,38,38,${Math.min(0.5, red * 0.55)})`;
     ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
   }
+  // dead: the sphere is shattered - jagged cracks + charred spots
+  if (hurt >= 0.999) drawCracks(ctx, cx, cy, r);
   ctx.restore();
   specular(ctx, cx, cy, r); // bright glossy glint
 
-  // about to die: the base catches fire (small past 10 lost, a blaze past 15)
-  if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.8 ? 2 : 1, time, 0);
+  // as it dies the base catches fire, and on death it burns hardest
+  if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.75 ? 2 : 1, time, 0);
 
   // health bar above the base - replaces the heart HUD counter, ticks down as
   // invaders leak through (just like an enemy's bar)

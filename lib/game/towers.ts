@@ -52,12 +52,12 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
   frost: {
     type: "frost",
     name: "Frost",
-    blurb: "Slows enemies to a crawl",
+    blurb: "Freezes enemies solid, no damage",
     color: "#60a5fa",
     icon: "❄",
     cost: 55,
     range: 2.4,
-    damage: 5,
+    damage: 0, // pure crowd control - freezes, never damages
     fireRate: 1.6,
     splash: 0,
     slow: 0.45,
@@ -108,12 +108,12 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
   slime: {
     type: "slime",
     name: "Slime",
-    blurb: "Gooey blobs, sticks and slows",
+    blurb: "Gooey blobs, sticks and slows, no damage",
     color: "#84cc16",
     icon: "🟢",
     cost: 65,
     range: 2.5,
-    damage: 8,
+    damage: 0, // pure crowd control - slows, never damages
     fireRate: 1.3,
     splash: 0.9, // the goo splatters onto nearby foes
     slow: 0.6, // stickiest slow in the game
@@ -152,11 +152,18 @@ export function towerStats(type: TowerType, level: number): TowerDef {
   const dmgMul = 1 + 0.45 * (lv - 1);
   const rangeMul = 1 + 0.14 * (lv - 1);
   const rateMul = 1 + 0.15 * (lv - 1);
+  // the sniper has a fixed per-level cadence: 1 shot every 3s / 2s / 1.5s
+  // (kept slow so a maxed sniper is strong but not overpowered)
+  const SNIPER_RATE = [1 / 3, 1 / 2, 1 / 1.5];
+  const fireRate =
+    type === "sniper"
+      ? SNIPER_RATE[lv - 1]
+      : +(base.fireRate * rateMul).toFixed(2);
   const stats: TowerDef = {
     ...base,
     damage: Math.round(base.damage * dmgMul),
     range: +(base.range * rangeMul).toFixed(2),
-    fireRate: +(base.fireRate * rateMul).toFixed(2),
+    fireRate,
     chain: base.chain > 0 ? base.chain + (lv - 1) : 0,
   };
   STATS_CACHE.set(key, stats);

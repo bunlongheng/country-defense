@@ -75,20 +75,15 @@ const PATH_LEN = pathLength();
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
 const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
-// Square build menu geometry: a 3x3 cluster. The center is the tile you are
-// about to build on; the 8 squares around it are the choices (7 towers + a
-// cancel). Offsets are grid steps of MENU_STEP px, clockwise from the top.
-const MENU_STEP = 60;
-const MENU_AROUND: [number, number][] = [
-  [0, -1],
-  [1, -1],
-  [1, 0],
-  [1, 1],
-  [0, 1],
-  [-1, 1],
-  [-1, 0],
-  [-1, -1],
-];
+// Radial build menu: the 8 choices (7 towers + a cancel) sit on a ring around
+// the tapped tile, forming a donut with the placement spot open in the middle.
+// MENU_STEP is the ring radius; MENU_AROUND holds unit-circle offsets, clockwise
+// from the top.
+const MENU_STEP = 80;
+const MENU_AROUND: [number, number][] = Array.from({ length: 8 }, (_, i) => {
+  const a = -Math.PI / 2 + (i * Math.PI * 2) / 8;
+  return [Math.cos(a), Math.sin(a)];
+});
 
 // Icons from the lucide-react library (bundled SVGs, no external requests).
 const IC = "h-4 w-4 sm:h-5 sm:w-5";
@@ -743,7 +738,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
                 {/* center: the placement spot (non-interactive, kept clear) */}
                 <div
-                  className="pointer-events-none absolute h-[46px] w-[46px] rounded-lg border-2 border-dashed border-white/70"
+                  className="pointer-events-none absolute h-[46px] w-[46px] rounded-full border-2 border-dashed border-white/70"
                   style={{ left: 0, top: 0, transform: "translate(-50%, -50%)" }}
                 />
                 {TOWER_ORDER.map((type, i) => {
@@ -764,7 +759,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                         if (buildAt(menu.col, menu.row, type)) closeMenu();
                       }}
                       title={`${d.name} - ${d.cost} gold`}
-                      className="absolute flex h-[52px] w-[52px] flex-col items-center justify-center gap-0.5 rounded-lg border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
+                      className="absolute flex h-[54px] w-[54px] flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
                       style={{
                         left: ox * MENU_STEP,
                         top: oy * MENU_STEP,
@@ -786,7 +781,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                 <button
                   aria-label="Cancel"
                   onClick={closeMenu}
-                  className="absolute flex h-[52px] w-[52px] items-center justify-center rounded-lg border-2 border-white/25 bg-neutral-900/90 text-lg text-white/70 shadow-lg transition active:scale-90"
+                  className="absolute flex h-[54px] w-[54px] items-center justify-center rounded-full border-2 border-white/25 bg-neutral-900/90 text-lg text-white/70 shadow-lg transition active:scale-90"
                   style={{
                     left: MENU_AROUND[7][0] * MENU_STEP,
                     top: MENU_AROUND[7][1] * MENU_STEP,

@@ -616,7 +616,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           </span>
         </div>
         {/* controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-3 sm:gap-4">
           <button
             onClick={() => setShowSettings(true)}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"

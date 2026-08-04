@@ -8,7 +8,8 @@ import {
   spawnWave,
   waveClearBonus,
   resetEnemyIds,
-  ENEMIES_PER_WAVE,
+  waveAssignments,
+  TOTAL_WAVES,
 } from "../lib/game/waves.ts";
 import {
   towerStats,
@@ -74,26 +75,53 @@ test("waves get tankier and faster every wave", () => {
   assert.ok(w5.reward > w1.reward, "reward grows");
 });
 
-test("spawnWave produces exactly 10 flagged invaders", () => {
+test("spawnWave builds a wave of distinct pool countries (~19/wave)", () => {
   const pool = COUNTRIES.filter((c) => c.code !== "us");
   const enemies = spawnWave(3, pool);
-  assert.equal(enemies.length, ENEMIES_PER_WAVE);
+  assert.ok(enemies.length >= 15 && enemies.length <= 25, "roughly a tenth of the pool");
   for (const e of enemies) {
     assert.ok(e.hp > 0 && e.hp === e.maxHp);
     assert.ok(pool.some((c) => c.code === e.code));
     assert.notEqual(e.code, "us", "player country never invades");
   }
-  // ids are unique
-  assert.equal(new Set(enemies.map((e) => e.id)).size, 10);
+  // ids and country codes are unique within the wave
+  assert.equal(new Set(enemies.map((e) => e.id)).size, enemies.length);
+  assert.equal(new Set(enemies.map((e) => e.code)).size, enemies.length);
+});
+
+test("every country invades exactly once across the 10 waves", () => {
+  const pool = COUNTRIES.filter((c) => c.code !== "us");
+  const seen = new Set<string>();
+  let total = 0;
+  for (let w = 1; w <= TOTAL_WAVES; w++) {
+    resetEnemyIds();
+    const codes = spawnWave(w, pool, 1.6, 7).map((e) => e.code);
+    total += codes.length;
+    codes.forEach((c) => seen.add(c));
+  }
+  assert.equal(total, pool.length, "all countries used, no duplicates");
+  assert.equal(seen.size, pool.length, "each country appears exactly once");
+});
+
+test("waveAssignments splits the pool evenly, remainder in the last wave", () => {
+  const pool = COUNTRIES.filter((c) => c.code !== "us"); // 193
+  const groups = waveAssignments(pool, 0);
+  assert.equal(groups.length, TOTAL_WAVES);
+  const per = Math.floor(pool.length / TOTAL_WAVES); // 19
+  for (let w = 0; w < TOTAL_WAVES - 1; w++) assert.equal(groups[w].length, per);
+  assert.equal(groups[TOTAL_WAVES - 1].length, pool.length - per * (TOTAL_WAVES - 1));
 });
 
 // ---- towers --------------------------------------------------------------
 
-test("there are 6 distinct tower types incl. laser and long-range sniper", () => {
-  assert.equal(TOWER_ORDER.length, 6);
-  assert.equal(new Set(TOWER_ORDER).size, 6);
+test("there are 7 distinct tower types incl. laser, sniper and slime", () => {
+  assert.equal(TOWER_ORDER.length, 7);
+  assert.equal(new Set(TOWER_ORDER).size, 7);
   assert.ok(TOWER_DEFS.laser, "laser exists");
   assert.ok(TOWER_DEFS.sniper.range > TOWER_DEFS.rapid.range, "sniper out-ranges rapid");
+  // the slime tower slows hard and splatters (its defining role)
+  assert.ok(TOWER_DEFS.slime.slow > 0, "slime slows");
+  assert.ok(TOWER_DEFS.slime.splash > 0, "slime splatters");
 });
 
 test("upgrading a tower raises damage and range, capped at MAX_LEVEL", () => {

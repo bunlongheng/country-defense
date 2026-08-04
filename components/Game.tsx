@@ -1,12 +1,29 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
-import { loadFlagImage } from "@/lib/flagImage";
+import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
+import {
+  unlockAudio,
+  toggleMute,
+  playShoot,
+  playImpact,
+  playKill,
+  playLeak,
+  playBuild,
+  playUpgrade,
+  playSell,
+  playWaveStart,
+  playCountdown,
+  playWin,
+  playLose,
+} from "@/lib/game/audio";
 import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
   GRID_COLS,
   GRID_ROWS,
+  BASE_CELL,
   pathCells,
   pathLength,
   isBuildable,
@@ -22,7 +39,6 @@ import { draw } from "@/lib/game/render";
 import {
   spawnWave,
   waveClearBonus,
-  waveStats,
   TOTAL_WAVES,
   resetEnemyIds,
 } from "@/lib/game/waves";
@@ -33,23 +49,51 @@ import {
   ageProjectiles,
   resetProjectileIds,
 } from "@/lib/game/engine";
+import type { Particle } from "@/lib/game/particles";
+import {
+  spawnExplosion,
+  spawnWisp,
+  stepParticles,
+  resetParticleSeed,
+} from "@/lib/game/particles";
 
-const START_GOLD = 220;
-const START_LIVES = 20;
+const START_GOLD = 200;
+const START_LIVES = 10;
 const BLOCKED = pathCells();
 const PATH_LEN = pathLength();
+const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
+const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
+
+// The home base is a real 3D glossy marble (same one as the picker), floated over
+// the 2D pedestal - far nicer than faking a spin on the flat canvas.
+const FlagMarble = dynamic(() => import("./FlagMarble"), { ssr: false });
+
+// Square build menu geometry: a 3x3 cluster. The center is the tile you are
+// about to build on; the 8 squares around it are the choices (7 towers + a
+// cancel). Offsets are grid steps of MENU_STEP px, clockwise from the top.
+const MENU_STEP = 60;
+const MENU_AROUND: [number, number][] = [
+  [0, -1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+];
 
 type Phase = "ready" | "wave" | "won" | "lost";
 
 export default function Game({
   code,
-  onExit,
 }: {
   code: string;
   onExit: () => void;
 }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // mutable simulation state (kept in refs so the rAF loop never re-renders)
   const enemies = useRef<Enemy[]>([]);
@@ -61,6 +105,15 @@ export default function Game({
   const cellRef = useRef(48); // px per tile, recomputed on resize
   const seedRef = useRef(0); // per-game seed so each playthrough varies invaders
   const cursorRef = useRef<{ x: number; y: number } | null>(null); // keyboard cursor
+  const speedRef = useRef(1); // 1x / 2x / 3x fast-forward
+  const pausedRef = useRef(false);
+  const paletteRef = useRef<string[]>([]); // dominant flag colors (country theme)
+  const countdownEndRef = useRef<number | null>(null); // performance.now() deadline for auto-start
+  const shownCountdownRef = useRef<number | null>(null); // last countdown value pushed to HUD
+  // live range/ghost preview drawn on the canvas while the honeycomb menu is open
+  const previewRef = useRef<{ cell: { x: number; y: number }; type: TowerType } | null>(null);
+  const defeatedRef = useRef<Record<string, number>>({}); // code -> times defeated
+  const particlesRef = useRef<Particle[]>([]); // smoke + sparks + embers
 
   // HUD state (updated from the loop only when a value changes)
   const [gold, setGold] = useState(START_GOLD);
@@ -68,11 +121,40 @@ export default function Game({
   const [wave, setWave] = useState(1);
   const [phase, setPhaseState] = useState<Phase>("ready");
   const [buildType, setBuildType] = useState<TowerType | null>("laser");
-  // display copy of the selected tower; the live tower lives in the towers ref
+  const [speed, setSpeed] = useState(1);
+  const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [isFs, setIsFs] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  // bucket of already-defeated countries, most-defeated first (small flag circles)
+  const [defeated, setDefeated] = useState<{ code: string; n: number }[]>([]);
+  // screen box for the floating 3D base marble (recomputed on resize)
+  const [baseBox, setBaseBox] = useState({ left: 0, top: 0, size: 0 });
+  // how many defeated flags fit on one line (~95% of the width); the rest -> "+N"
+  const flagW = 24; // px per flag incl. gap
+  const [maxFlags, setMaxFlags] = useState(() =>
+    typeof window !== "undefined" ? Math.max(6, Math.floor((window.innerWidth * 0.95) / flagW)) : 30,
+  );
+  useEffect(() => {
+    const calc = () => setMaxFlags(Math.max(6, Math.floor((window.innerWidth * 0.95) / flagW)));
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, []);
+  // honeycomb build menu: opened by tapping an empty buildable tile
+  const [menu, setMenu] = useState<{
+    col: number;
+    row: number;
+    left: number;
+    top: number;
+  } | null>(null);
+  // display copy of the selected tower (+ its on-screen position so the upgrade
+  // panel can sit right next to the tapped tower); the live tower lives in the ref
   const [selected, setSelected] = useState<{
     id: number;
     type: TowerType;
     level: number;
+    left: number;
+    top: number;
   } | null>(null);
 
   const goldRef = useRef(START_GOLD);
@@ -100,6 +182,17 @@ export default function Game({
 
   const setPhase = (p: Phase) => {
     phaseRef.current = p;
+    // entering the "ready" lull arms the auto-start deadline and shows the FULL
+    // delay right away, so the countdown reads 4..3..2..1 (not 3..2..1)
+    if (p === "ready" && typeof performance !== "undefined") {
+      const delay = waveRef.current === 1 ? FIRST_WAVE_DELAY : NEXT_WAVE_DELAY;
+      countdownEndRef.current = performance.now() + delay * 1000;
+      shownCountdownRef.current = delay;
+      setCountdown(delay);
+    } else {
+      countdownEndRef.current = null;
+      shownCountdownRef.current = null;
+    }
     setPhaseState(p);
   };
   const spendGold = (amount: number) => {
@@ -111,7 +204,13 @@ export default function Game({
   // per-game seed so invader lineups differ between playthroughs
   useEffect(() => {
     seedRef.current = Math.floor(Math.random() * pool.current.length);
-    loadFlagImage(code).catch(() => {});
+    // arm the very first wave's auto-start (build time before invaders arrive)
+    countdownEndRef.current = performance.now() + FIRST_WAVE_DELAY * 1000;
+    loadFlagImage(code)
+      .then(() => {
+        paletteRef.current = getFlagPalette(code);
+      })
+      .catch(() => {});
     pool.current.slice(0, 30).forEach((c) => loadFlagImage(c.code).catch(() => {}));
   }, [code]);
 
@@ -122,12 +221,18 @@ export default function Game({
     const fresh = spawnWave(w, pool.current, 1.6, seedRef.current);
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
+    countdownEndRef.current = null;
+    shownCountdownRef.current = null;
+    setCountdown(null);
+    playWaveStart();
     setPhase("wave");
   }, []);
 
   const resetGame = useCallback(() => {
     resetEnemyIds();
     resetProjectileIds();
+    resetParticleSeed();
+    particlesRef.current = [];
     enemies.current = [];
     towers.current = [];
     projectiles.current = [];
@@ -142,6 +247,10 @@ export default function Game({
     setWave(1);
     setSelected(null);
     setBuildType("laser");
+    setMenu(null);
+    previewRef.current = null;
+    defeatedRef.current = {};
+    setDefeated([]);
     setPhase("ready");
   }, []);
 
@@ -155,8 +264,14 @@ export default function Game({
 
     const resize = () => {
       const parent = canvas.parentElement!;
+      // fit the whole board inside the available box (both width AND height) so
+      // the arena fills the screen without ever overflowing off the bottom
       const cw = parent.clientWidth;
-      const cell = Math.floor(cw / GRID_COLS);
+      const ch = parent.clientHeight || cw * (GRID_ROWS / GRID_COLS);
+      const cell = Math.max(
+        24,
+        Math.floor(Math.min(cw / GRID_COLS, ch / GRID_ROWS)),
+      );
       cellRef.current = cell;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = cell * GRID_COLS * dpr;
@@ -164,60 +279,148 @@ export default function Game({
       canvas.style.width = `${cell * GRID_COLS}px`;
       canvas.style.height = `${cell * GRID_ROWS}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // place the floating 3D marble over the base tile (offsets are within the
+      // relatively-positioned arena wrapper, same basis as the honeycomb menu)
+      setBaseBox({
+        left: canvas.offsetLeft + (BASE_CELL.x + 0.5) * cell,
+        top: canvas.offsetTop + (BASE_CELL.y + 0.5) * cell - cell * 0.12,
+        size: cell * 1.6,
+      });
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas.parentElement!);
 
+    // One fixed-size slice of simulation. Called once per frame at 1x and up to
+    // 3 times per frame at 3x, so fast-forward stays accurate instead of taking
+    // giant, collision-skipping steps.
+    const stepWave = (dt: number) => {
+      time.current += dt;
+      const moved = moveEnemies(enemies.current, dt, time.current, PATH_LEN);
+      enemies.current = moved.survivors;
+      if (moved.leaked > 0) {
+        livesRef.current = Math.max(0, livesRef.current - moved.leaked);
+        setLives(livesRef.current);
+        playLeak();
+      }
+      const fired = fireTowers(towers.current, enemies.current, dt, time.current);
+      if (fired.projectiles.length) {
+        projectiles.current.push(...fired.projectiles);
+        playShoot(fired.projectiles[0].type, time.current);
+        playImpact(time.current);
+      }
+      // death puffs + defeated bucket: capture everything about to be reaped
+      const killed = enemies.current.filter((e) => e.hp <= 0);
+      const reaped = reapDead(enemies.current);
+      enemies.current = reaped.survivors;
+      if (reaped.gold > 0) {
+        goldRef.current += reaped.gold;
+        setGold(goldRef.current);
+      }
+      if (reaped.kills > 0) {
+        playKill();
+        for (const e of killed) {
+          defeatedRef.current[e.code] = (defeatedRef.current[e.code] ?? 0) + 1;
+          spawnExplosion(particlesRef.current, e.pos.x, e.pos.y, "#f97316");
+        }
+        setDefeated(
+          Object.entries(defeatedRef.current)
+            .map(([code, n]) => ({ code, n }))
+            .sort((a, b) => b.n - a.n),
+        );
+      }
+
+      projectiles.current = ageProjectiles(projectiles.current, dt);
+      particlesRef.current = stepParticles(particlesRef.current, dt);
+
+      if (livesRef.current <= 0) {
+        playLose();
+        setPhase("lost");
+      } else if (enemies.current.length === 0) {
+        const bonus = waveClearBonus(waveRef.current);
+        goldRef.current += bonus;
+        setGold(goldRef.current);
+        if (waveRef.current >= TOTAL_WAVES) {
+          playWin();
+          setPhase("won");
+        } else {
+          waveRef.current += 1;
+          setWave(waveRef.current);
+          setPhase("ready");
+        }
+      }
+    };
+
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
 
-      if (phaseRef.current === "wave") {
-        time.current += dt;
-        const moved = moveEnemies(enemies.current, dt, time.current, PATH_LEN);
-        enemies.current = moved.survivors;
-        if (moved.leaked > 0) {
-          livesRef.current = Math.max(0, livesRef.current - moved.leaked);
-          setLives(livesRef.current);
-        }
-        const fired = fireTowers(towers.current, enemies.current, dt, time.current);
-        if (fired.projectiles.length)
-          projectiles.current.push(...fired.projectiles);
-        const reaped = reapDead(enemies.current);
-        enemies.current = reaped.survivors;
-        if (reaped.gold > 0) {
-          goldRef.current += reaped.gold;
-          setGold(goldRef.current);
-        }
-        projectiles.current = ageProjectiles(projectiles.current, dt);
+      // paused: freeze the whole simulation (and hold the auto-start countdown),
+      // but keep drawing so the frozen board still shows
+      if (pausedRef.current) {
+        if (countdownEndRef.current !== null) countdownEndRef.current += dt * 1000;
+        draw(ctx, cellRef.current, {
+          code,
+          palette: paletteRef.current,
+          time: now / 1000,
+          enemies: enemies.current,
+          towers: towers.current,
+          projectiles: projectiles.current,
+          particles: particlesRef.current,
+          lives: livesRef.current,
+          maxLives: START_LIVES,
+          gameTime: time.current,
+          selectedId: selectedIdRef.current,
+          buildType: buildTypeRef.current,
+          cursor: cursorRef.current,
+          preview: previewRef.current,
+        });
+        raf = requestAnimationFrame(frame);
+        return;
+      }
 
-        if (livesRef.current <= 0) {
-          setPhase("lost");
-        } else if (enemies.current.length === 0) {
-          const bonus = waveClearBonus(waveRef.current);
-          goldRef.current += bonus;
-          setGold(goldRef.current);
-          if (waveRef.current >= TOTAL_WAVES) {
-            setPhase("won");
-          } else {
-            waveRef.current += 1;
-            setWave(waveRef.current);
-            setPhase("ready");
-          }
+      if (phaseRef.current === "wave") {
+        for (let i = 0; i < speedRef.current; i++) {
+          if (phaseRef.current !== "wave") break;
+          stepWave(dt);
         }
       } else {
         projectiles.current = ageProjectiles(projectiles.current, dt);
+        particlesRef.current = stepParticles(particlesRef.current, dt);
+        // auto-start countdown during the "ready" lull
+        if (phaseRef.current === "ready" && countdownEndRef.current !== null) {
+          const remain = Math.max(0, Math.ceil((countdownEndRef.current - now) / 1000));
+          if (remain !== shownCountdownRef.current) {
+            shownCountdownRef.current = remain;
+            setCountdown(remain);
+            if (remain > 0 && remain <= 3) playCountdown();
+          }
+          if (now >= countdownEndRef.current) startWave();
+        }
       }
+
+      // the base smokes past half-health, then burns as it nears death
+      const hurtFrac = 1 - livesRef.current / START_LIVES;
+      if (hurtFrac > 0.5 && Math.random() < dt * (hurtFrac > 0.8 ? 12 : 5))
+        spawnWisp(particlesRef.current, BASE_CELL.x, BASE_CELL.y - 0.35);
+      if (hurtFrac > 0.8 && Math.random() < dt * 5)
+        spawnExplosion(particlesRef.current, BASE_CELL.x, BASE_CELL.y - 0.4, "#f97316");
 
       draw(ctx, cellRef.current, {
         code,
+        palette: paletteRef.current,
+        time: now / 1000,
         enemies: enemies.current,
         towers: towers.current,
         projectiles: projectiles.current,
+        particles: particlesRef.current,
+        lives: livesRef.current,
+        maxLives: START_LIVES,
+        gameTime: time.current,
         selectedId: selectedIdRef.current,
         buildType: buildTypeRef.current,
         cursor: cursorRef.current,
+        preview: previewRef.current,
       });
       raf = requestAnimationFrame(frame);
     };
@@ -226,59 +429,108 @@ export default function Game({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [code]);
+  }, [code, startWave]);
 
-  // ---- build / select (shared by pointer taps and keyboard) --------------
-  const selectOrBuild = useCallback(
-    (col: number, row: number) => {
-      const existing = towers.current.find(
-        (t) => t.cell.x === col && t.cell.y === row,
-      );
-      if (existing) {
-        setSelected({ id: existing.id, type: existing.type, level: existing.level });
-        return;
-      }
-      setSelected(null);
-      const type = buildTypeRef.current;
-      if (!type) return;
-      if (!isBuildable(col, row, BLOCKED)) {
-        flash("Can't build on the path");
-        return;
-      }
-      const cost = TOWER_DEFS[type].cost;
-      if (goldRef.current < cost) {
-        flash(`Need ${cost} gold`);
-        return;
-      }
-      towers.current.push({
-        id: nextTowerId.current++,
-        type,
-        cell: { x: col, y: row },
-        level: 1,
-        cooldown: 0,
-      });
-      spendGold(cost);
-    },
-    // all reads are refs; state setters are stable
-    [],
-  );
+  // ---- build / select ----------------------------------------------------
+  // Core purchase: validate, place the tower, spend gold, ka-ching. Returns
+  // whether it actually built (so callers can close the menu on success only).
+  const buildAt = useCallback((col: number, row: number, type: TowerType): boolean => {
+    if (!isBuildable(col, row, BLOCKED)) {
+      flash("Can't build on the path");
+      return false;
+    }
+    if (towers.current.some((t) => t.cell.x === col && t.cell.y === row)) return false;
+    const cost = TOWER_DEFS[type].cost;
+    if (goldRef.current < cost) {
+      flash(`Need ${cost} gold`);
+      return false;
+    }
+    towers.current.push({
+      id: nextTowerId.current++,
+      type,
+      cell: { x: col, y: row },
+      level: 1,
+      cooldown: 0,
+    });
+    spendGold(cost);
+    playBuild(); // ka-ching
+    return true;
+  }, []);
 
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    previewRef.current = null;
+  }, []);
+
+  // Tap a tile: existing tower -> select it; empty buildable tile -> open the
+  // honeycomb menu of towers to pick from; road -> reject.
   const onCanvasPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    unlockAudio();
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const cell = cellRef.current;
     cursorRef.current = null; // pointer play hides the keyboard cursor
-    selectOrBuild(
-      Math.floor((e.clientX - rect.left) / cell),
-      Math.floor((e.clientY - rect.top) / cell),
-    );
+    const col = Math.floor((e.clientX - rect.left) / cell);
+    const row = Math.floor((e.clientY - rect.top) / cell);
+
+    const existing = towers.current.find((t) => t.cell.x === col && t.cell.y === row);
+    if (existing) {
+      setSelected({
+        id: existing.id,
+        type: existing.type,
+        level: existing.level,
+        left: canvas.offsetLeft + (col + 0.5) * cell,
+        top: canvas.offsetTop + row * cell,
+      });
+      closeMenu();
+      return;
+    }
+    setSelected(null);
+    if (!isBuildable(col, row, BLOCKED)) {
+      flash("Can't build on the path");
+      closeMenu();
+      return;
+    }
+    // open the honeycomb centered on the tapped tile (coords within the arena wrapper)
+    setMenu({
+      col,
+      row,
+      left: canvas.offsetLeft + col * cell + cell / 2,
+      top: canvas.offsetTop + row * cell + cell / 2,
+    });
+    previewRef.current = null;
   };
+
+  // Keyboard play keeps the direct place-with-current-type flow.
+  const selectOrBuild = useCallback(
+    (col: number, row: number) => {
+      unlockAudio();
+      const existing = towers.current.find((t) => t.cell.x === col && t.cell.y === row);
+      if (existing) {
+        const cell = cellRef.current;
+        const canvas = canvasRef.current;
+        setSelected({
+          id: existing.id,
+          type: existing.type,
+          level: existing.level,
+          left: (canvas?.offsetLeft ?? 0) + (col + 0.5) * cell,
+          top: (canvas?.offsetTop ?? 0) + row * cell,
+        });
+        return;
+      }
+      setSelected(null);
+      const type = buildTypeRef.current;
+      if (type) buildAt(col, row, type);
+    },
+    [buildAt],
+  );
 
   // ---- keyboard: move a build cursor, place, and pick towers -------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (phaseRef.current === "won" || phaseRef.current === "lost") return;
-      const digit = "123456".indexOf(e.key);
+      unlockAudio();
+      const digit = "1234567".indexOf(e.key);
       if (digit >= 0) {
         setSelected(null);
         setBuildType(TOWER_ORDER[digit]);
@@ -297,6 +549,7 @@ export default function Game({
       } else if (e.key === "Escape") {
         cursorRef.current = null;
         setSelected(null);
+        closeMenu();
         return;
       } else return;
       e.preventDefault();
@@ -304,7 +557,7 @@ export default function Game({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectOrBuild]);
+  }, [selectOrBuild, closeMenu]);
 
   const doUpgrade = () => {
     const id = selectedIdRef.current;
@@ -314,7 +567,8 @@ export default function Game({
     if (goldRef.current < cost) return;
     t.level += 1;
     spendGold(cost);
-    setSelected({ id: t.id, type: t.type, level: t.level }); // refresh panel
+    playUpgrade();
+    setSelected((prev) => (prev ? { ...prev, level: t.level } : prev)); // keep position
   };
   const doSell = () => {
     const id = selectedIdRef.current;
@@ -322,34 +576,47 @@ export default function Game({
     if (!t) return;
     goldRef.current += sellValue(t.type, t.level);
     setGold(goldRef.current);
+    playSell();
     towers.current = towers.current.filter((x) => x.id !== id);
     setSelected(null);
   };
 
-  // Confirm before abandoning a battle in progress so one stray tap does not wipe a run.
-  const handleExit = () => {
-    if (
-      (phaseRef.current === "wave" || towers.current.length > 0) &&
-      typeof window !== "undefined" &&
-      !window.confirm("Leave the battle? Your progress will be lost.")
-    ) {
-      return;
-    }
-    onExit();
+  const cycleSpeed = () => {
+    const next = speedRef.current >= 3 ? 1 : speedRef.current + 1;
+    speedRef.current = next;
+    setSpeed(next);
   };
+  const onToggleMute = () => {
+    unlockAudio();
+    setMuted(toggleMute());
+  };
+  const togglePause = () => {
+    pausedRef.current = !pausedRef.current;
+    setPaused(pausedRef.current);
+  };
+  const toggleFullscreen = () => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) el.requestFullscreen?.().catch(() => {});
+    else document.exitFullscreen?.().catch(() => {});
+  };
+  useEffect(() => {
+    const onFs = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   // clean up the hint timer on unmount
   useEffect(() => () => {
     if (hintTimer.current) clearTimeout(hintTimer.current);
   }, []);
 
-  const ws = waveStats(wave);
-
   if (!country) return null;
 
   return (
     <div
-      className="flex min-h-dvh flex-col bg-black text-white"
+      ref={rootRef}
+      className="flex h-dvh flex-col overflow-hidden bg-black text-white"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {/* top HUD */}
@@ -357,36 +624,180 @@ export default function Game({
         className="flex items-center justify-between gap-3 px-4 py-3"
         style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
       >
-        <button
-          onClick={handleExit}
-          className="min-h-11 rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 active:scale-95"
-        >
-          ← Change
-        </button>
-        <div className="flex items-center gap-4 text-sm font-semibold sm:gap-6">
-          <Stat label="Wave" value={`${wave}/${TOTAL_WAVES}`} tone="text-cyan-400" />
-          <Stat label="Lives" value={lives} tone="text-rose-400" />
-          <Stat label="Gold" value={gold} tone="text-amber-300" />
+        {/* wave number + auto-start countdown - top left */}
+        <span className="text-base font-black text-cyan-400" title="Wave">
+          🌊 {wave}/{TOTAL_WAVES}
+          {phase === "ready" && countdown !== null && (
+            <span className="ml-1 font-bold text-white/70">· {countdown}s</span>
+          )}
+        </span>
+        {/* gold - center */}
+        <span className="text-base font-black text-amber-300" title="Gold">
+          🪙 {gold}
+        </span>
+        {/* controls + health next to the flag - top right */}
+        <div className="flex items-center gap-2">
+          <span className="mr-1 text-base font-black text-rose-400" title="Lives">
+            ❤️ {lives}
+          </span>
+          <button
+            onClick={togglePause}
+            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
+            aria-label={paused ? "Resume" : "Pause"}
+            aria-pressed={paused}
+            title={paused ? "Resume" : "Pause"}
+          >
+            {paused ? "▶️" : "⏸️"}
+          </button>
+          <button
+            onClick={cycleSpeed}
+            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-sm font-bold text-cyan-300 active:scale-95"
+            aria-label={`Game speed ${speed} times, tap to change`}
+            title="Fast-forward"
+          >
+            {speed}x
+          </button>
+          <button
+            onClick={onToggleMute}
+            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
+            aria-label={muted ? "Unmute sound" : "Mute sound"}
+            aria-pressed={muted}
+            title={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
+            aria-label={isFs ? "Exit full screen" : "Enter full screen"}
+            aria-pressed={isFs}
+            title={isFs ? "Exit full screen" : "Full screen"}
+          >
+            {isFs ? "🗗" : "⛶"}
+          </button>
+          <div
+            className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
+            style={{ backgroundImage: `url(${flagUrl(code)})` }}
+            title={country.name}
+            role="img"
+            aria-label={`Defending ${country.name}`}
+          />
         </div>
-        <div
-          className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
-          style={{ backgroundImage: `url(${flagUrl(code)})` }}
-          title={country.name}
-          role="img"
-          aria-label={`Defending ${country.name}`}
-        />
       </div>
 
-      {/* arena */}
-      <div className="relative flex flex-1 items-center justify-center px-2">
-        <div className="relative w-full max-w-4xl">
+      {/* defeated countries: one grayscale line across the full width (they're
+          dead, so desaturated). Shows every country - scrolls if it overflows. */}
+      <div className="flex h-7 items-center gap-1 overflow-hidden px-3">
+        {defeated.slice(0, maxFlags).map(({ code }) => (
+          <div
+            key={code}
+            className="h-5 w-5 shrink-0 rounded-full bg-cover bg-center opacity-70 grayscale ring-1 ring-black/40"
+            style={{ backgroundImage: `url(${flagUrl(code)})` }}
+            title={findCountry(code)?.name ?? code}
+          />
+        ))}
+        {defeated.length > maxFlags && (
+          <span className="shrink-0 pl-1 text-xs font-bold text-white/60">
+            +{defeated.length - maxFlags}
+          </span>
+        )}
+      </div>
+
+      {/* arena - fills all remaining space; the board is fit to this box */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-1 sm:px-2">
+        <div className="relative flex h-full w-full items-center justify-center">
           <canvas
             ref={canvasRef}
             onPointerDown={onCanvasPointer}
             role="img"
-            aria-label="Battle map - tap an open tile to place a tower, tap a tower to upgrade it"
-            className="mx-auto block touch-none rounded-2xl ring-1 ring-white/10"
+            aria-label="Battle map - tap an open tile to open the tower menu, tap a tower to upgrade it"
+            className="block touch-none rounded-2xl ring-1 ring-white/10"
           />
+
+          {/* real 3D glossy marble for the home base, floating over the pedestal */}
+          {baseBox.size > 0 && (
+            <div
+              className="pointer-events-none absolute z-[5]"
+              style={{
+                left: baseBox.left,
+                top: baseBox.top,
+                width: baseBox.size,
+                height: baseBox.size,
+                animation: "baseFloat 2.6s ease-in-out infinite",
+              }}
+            >
+              <FlagMarble code={code} spin interactive={false} />
+            </div>
+          )}
+          <style>{`@keyframes baseFloat{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(-50%,-57%)}}`}</style>
+
+          {/* square build menu: 8 tiles around the center (the tile you're placing
+              on stays open in the middle so it is never covered) */}
+          {menu && (
+            <>
+              <button
+                aria-label="Close tower menu"
+                onPointerDown={closeMenu}
+                className="absolute inset-0 z-20 cursor-default"
+              />
+              <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
+                {/* center: the placement spot (non-interactive, kept clear) */}
+                <div
+                  className="pointer-events-none absolute h-[46px] w-[46px] rounded-lg border-2 border-dashed border-white/70"
+                  style={{ left: 0, top: 0, transform: "translate(-50%, -50%)" }}
+                />
+                {TOWER_ORDER.map((type, i) => {
+                  const [ox, oy] = MENU_AROUND[i];
+                  const d = TOWER_DEFS[type];
+                  const afford = gold >= d.cost;
+                  return (
+                    <button
+                      key={type}
+                      disabled={!afford}
+                      onPointerEnter={() => {
+                        previewRef.current = { cell: { x: menu.col, y: menu.row }, type };
+                      }}
+                      onPointerLeave={() => {
+                        previewRef.current = null;
+                      }}
+                      onClick={() => {
+                        if (buildAt(menu.col, menu.row, type)) closeMenu();
+                      }}
+                      title={`${d.name} - ${d.cost} gold`}
+                      className="absolute flex h-[52px] w-[52px] flex-col items-center justify-center gap-0.5 rounded-lg border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
+                      style={{
+                        left: ox * MENU_STEP,
+                        top: oy * MENU_STEP,
+                        transform: "translate(-50%, -50%)",
+                        borderColor: d.color,
+                        background: `radial-gradient(circle at 40% 30%, ${d.color}33, #0b0d12 88%)`,
+                      }}
+                    >
+                      <span className="text-lg leading-none" style={{ color: d.color }}>
+                        {d.icon}
+                      </span>
+                      <span className="text-[9px] font-bold leading-none text-amber-300">
+                        {d.cost}
+                      </span>
+                    </button>
+                  );
+                })}
+                {/* 8th slot: cancel */}
+                <button
+                  aria-label="Cancel"
+                  onClick={closeMenu}
+                  className="absolute flex h-[52px] w-[52px] items-center justify-center rounded-lg border-2 border-white/25 bg-neutral-900/90 text-lg text-white/70 shadow-lg transition active:scale-90"
+                  style={{
+                    left: MENU_AROUND[7][0] * MENU_STEP,
+                    top: MENU_AROUND[7][1] * MENU_STEP,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </>
+          )}
 
           {/* transient feedback banner for rejected taps */}
           {hint && (
@@ -397,14 +808,32 @@ export default function Game({
             </div>
           )}
 
-          {/* upgrade / sell panel */}
+          {/* upgrade / sell panel - floats right above the tapped tower */}
           {selected && (
-            <div className="absolute left-1/2 top-2 -translate-x-1/2 rounded-xl border border-white/15 bg-neutral-900/95 px-4 py-3 text-center shadow-xl">
+            <div
+              className="absolute z-40 -translate-x-1/2 -translate-y-full rounded-xl border border-white/15 bg-neutral-900/95 px-4 py-3 text-center shadow-xl"
+              style={{ left: selected.left, top: selected.top - 6 }}
+            >
               <div
-                className="text-sm font-bold"
+                className="flex items-center justify-center gap-2 text-sm font-bold"
                 style={{ color: TOWER_DEFS[selected.type].color }}
               >
-                {TOWER_DEFS[selected.type].name} · Lv {selected.level}
+                {TOWER_DEFS[selected.type].name}
+                <span className="flex gap-1">
+                  {Array.from({ length: MAX_LEVEL }, (_, i) => (
+                    <span
+                      key={i}
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        background:
+                          i < selected.level
+                            ? TOWER_DEFS[selected.type].color
+                            : "rgba(255,255,255,0.2)",
+                      }}
+                    />
+                  ))}
+                </span>
+                <span className="text-white/60">Lv {selected.level}/{MAX_LEVEL}</span>
               </div>
               <div className="mt-2 flex gap-2">
                 <button
@@ -416,8 +845,8 @@ export default function Game({
                   className="min-h-11 rounded-lg bg-cyan-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-40"
                 >
                   {selected.level >= MAX_LEVEL
-                    ? "Maxed"
-                    : `Upgrade ${upgradeCost(selected.type, selected.level)}`}
+                    ? "Max level"
+                    : `Upgrade to Lv ${selected.level + 1} · ${upgradeCost(selected.type, selected.level)}`}
                 </button>
                 <button
                   onClick={doSell}
@@ -452,78 +881,6 @@ export default function Game({
         </div>
       </div>
 
-      {/* bottom: tower shop */}
-      <div className="border-t border-white/10 p-3">
-        {/* fixed-height control row so the shop never jumps when a wave starts */}
-        <div className="mb-3 flex h-10 items-center justify-center gap-3">
-          {phase === "ready" ? (
-            <>
-              <button
-                onClick={startWave}
-                className="min-h-11 rounded-full bg-emerald-400 px-6 py-2.5 font-bold text-black shadow-lg shadow-emerald-500/20 active:scale-95"
-              >
-                Start Wave {wave} ▸
-              </button>
-              <span className="text-xs text-white/60">
-                Invaders: {ws.hp} hp · faster each wave
-              </span>
-            </>
-          ) : (
-            <span className="text-sm font-semibold text-cyan-400">
-              Wave {wave} - defend!
-            </span>
-          )}
-        </div>
-        <div className="mx-auto grid max-w-4xl grid-cols-3 gap-2 sm:grid-cols-6">
-          {TOWER_ORDER.map((type) => {
-            const d = TOWER_DEFS[type];
-            const active = buildType === type && !selected;
-            const afford = gold >= d.cost;
-            return (
-              <button
-                key={type}
-                onClick={() => {
-                  setSelected(null);
-                  setBuildType(type);
-                }}
-                aria-pressed={active}
-                className={`flex min-h-11 flex-col items-center gap-0.5 rounded-xl border px-2 py-2 transition ${
-                  active
-                    ? "border-white bg-white/10"
-                    : "border-white/10 bg-white/[0.03]"
-                } ${afford ? "" : "opacity-40"}`}
-              >
-                <span className="text-lg" style={{ color: d.color }}>
-                  {d.icon}
-                </span>
-                <span className="text-[11px] font-semibold text-white/80">
-                  {d.name}
-                </span>
-                <span className="text-[10px] text-amber-300">{d.cost}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  tone: string;
-}) {
-  return (
-    <div className="flex flex-col items-center leading-none">
-      <span className={`text-lg font-black ${tone}`}>{value}</span>
-      <span className="text-[11px] uppercase tracking-wider text-white/60">
-        {label}
-      </span>
     </div>
   );
 }

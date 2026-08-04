@@ -12,7 +12,8 @@ export type TowerType =
   | "frost"
   | "sniper"
   | "rapid"
-  | "tesla";
+  | "tesla"
+  | "slime";
 
 export interface Enemy {
   id: number;
@@ -23,8 +24,10 @@ export interface Enemy {
   speed: number; // tiles per second
   dist: number; // distance travelled along the path, in tiles
   reward: number;
-  slowUntil: number; // game-time (s) until which the frost slow applies
+  slowUntil: number; // game-time (s) until which the slow applies
   slowMul: number; // speed multiplier while slowed (1 = no slow)
+  frozenUntil?: number; // game-time until which the enemy is frozen solid (frost)
+  shockUntil?: number; // game-time until which to draw the tesla electric arc
   pos: Vec2; // cached world position, refreshed each step
 }
 
@@ -34,6 +37,7 @@ export interface Tower {
   cell: Vec2; // grid cell (integer col,row)
   level: number; // 1..MAX_LEVEL
   cooldown: number; // seconds until it can fire again
+  aim?: number; // barrel angle (radians); tracks the current target, holds last on none
 }
 
 export interface Projectile {

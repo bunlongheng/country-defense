@@ -13,6 +13,15 @@ import {
 // side effects makes the whole game unit-testable.
 
 export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
+export const FREEZE_DURATION = 1; // frost freezes an enemy solid for 1s
+export const SLIME_SLOW_DURATION = 5; // slime's slow lingers for 5s
+const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
+
+// Stamp the per-tower status effect (electric arc / freeze) onto a hit enemy.
+function markEffect(enemy: Enemy, type: string, time: number) {
+  if (type === "tesla") enemy.shockUntil = time + SHOCK_DURATION;
+  else if (type === "frost") enemy.frozenUntil = time + FREEZE_DURATION;
+}
 
 export interface MoveResult {
   survivors: Enemy[];
@@ -33,7 +42,9 @@ export function moveEnemies(
   const survivors: Enemy[] = [];
   let leaked = 0;
   for (const e of enemies) {
-    const mul = time < e.slowUntil ? e.slowMul : 1;
+    // frost freezes an enemy solid (no movement); otherwise a slow may apply
+    const frozen = e.frozenUntil !== undefined && time < e.frozenUntil;
+    const mul = frozen ? 0 : time < e.slowUntil ? e.slowMul : 1;
     e.dist += e.speed * mul * dt;
     if (e.dist >= pathLen) {
       leaked++;
@@ -68,16 +79,22 @@ export function fireTowers(
   const projectiles: Projectile[] = [];
   for (const tower of towers) {
     tower.cooldown -= dt;
-    if (tower.cooldown > 0) continue;
     const target = pickTarget(tower, enemies);
-    if (!target) continue;
+    const from = towerCenter(tower);
+    // rotate the barrel to track the target every frame (even while on cooldown),
+    // and hold the last angle when nothing is in range - "follow as long as it can"
+    if (target) {
+      tower.aim = Math.atan2(target.pos.y - from.y, target.pos.x - from.x);
+    }
+    if (tower.cooldown > 0 || !target) continue;
 
     const stats = towerStats(tower.type, tower.level);
     tower.cooldown = 1 / stats.fireRate;
-    const from = towerCenter(tower);
+    const slowDur = tower.type === "slime" ? SLIME_SLOW_DURATION : FROST_DURATION;
 
     // primary hit
-    applyHit(target, stats.damage, stats.slow, time);
+    applyHit(target, stats.damage, stats.slow, time, slowDur);
+    markEffect(target, tower.type, time);
     projectiles.push({
       id: projId,
       from,
@@ -91,7 +108,8 @@ export function fireTowers(
     // cannon splash: everyone near the target takes the hit too
     if (stats.splash > 0) {
       for (const e of enemiesInRadius(target.pos, stats.splash, enemies, target.id)) {
-        applyHit(e, Math.round(stats.damage * 0.6), stats.slow, time);
+        applyHit(e, Math.round(stats.damage * 0.6), stats.slow, time, slowDur);
+        markEffect(e, tower.type, time);
       }
     }
 
@@ -103,6 +121,7 @@ export function fireTowers(
       let prev = target.pos;
       for (const e of arcs) {
         applyHit(e, Math.round(stats.damage * 0.7), stats.slow, time);
+        e.shockUntil = time + SHOCK_DURATION;
         projectiles.push({
           id: projId,
           from: prev,
@@ -125,11 +144,17 @@ function boltJitter(id: number): number {
   return (((id * 9301 + 49297) % 233280) / 233280 - 0.5) * 0.6;
 }
 
-function applyHit(enemy: Enemy, damage: number, slow: number, time: number) {
+function applyHit(
+  enemy: Enemy,
+  damage: number,
+  slow: number,
+  time: number,
+  slowDur = FROST_DURATION,
+) {
   enemy.hp -= damage;
   if (slow > 0) {
     enemy.slowMul = 1 - slow;
-    enemy.slowUntil = time + FROST_DURATION;
+    enemy.slowUntil = time + slowDur;
   }
 }
 

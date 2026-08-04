@@ -2,12 +2,12 @@ import type { Country } from "../countries.ts";
 import type { Enemy } from "./types.ts";
 import { pointAtDistance } from "./map.ts";
 
-// 10 invaders per wave. Each wave they get tankier AND faster, so the player has
-// to keep upgrading. Numbers are tuned to feel fair for a kid: winnable, but only
-// if you spend your gold.
+// Every country invades exactly ONCE across the whole game. The pool (all
+// countries except the player's) is shuffled and split evenly across the 10
+// waves - ~19 invaders per wave, with the leftover countries arriving in the
+// final wave. Each wave they get tankier AND faster, so keep upgrading.
 
-export const ENEMIES_PER_WAVE = 10;
-export const TOTAL_WAVES = 12;
+export const TOTAL_WAVES = 10;
 
 const BASE_HP = 34;
 const BASE_SPEED = 0.9; // tiles/sec
@@ -39,10 +39,50 @@ export function resetEnemyIds() {
   nextId = 1;
 }
 
+// Small seeded PRNG so a given seed always produces the same shuffle (keeps the
+// sim deterministic and unit-testable) while different seeds vary the lineup.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededShuffle<T>(arr: readonly T[], seed: number): T[] {
+  const a = arr.slice();
+  const rnd = mulberry32(seed + 1);
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 /**
- * Build the 10 invaders for a wave. Countries are drawn from the pool (excluding
- * the player's own country) so each invader wears a real flag. Enemies are spaced
- * out behind the entry so they stream in rather than all appear at once.
+ * Split the whole pool across the 10 waves: floor(pool/10) countries per wave,
+ * with the remainder tacked onto the last wave. Deterministic for a given seed.
+ * Every country appears in exactly one wave.
+ */
+export function waveAssignments(pool: Country[], seed = 0): Country[][] {
+  const shuffled = seededShuffle(pool, seed);
+  const per = Math.floor(pool.length / TOTAL_WAVES);
+  const groups: Country[][] = [];
+  let idx = 0;
+  for (let w = 0; w < TOTAL_WAVES; w++) {
+    const count = w === TOTAL_WAVES - 1 ? pool.length - idx : per;
+    groups.push(shuffled.slice(idx, idx + count));
+    idx += count;
+  }
+  return groups;
+}
+
+/**
+ * Build the invaders for a wave: this wave's slice of the shuffled pool, each a
+ * distinct country (nobody invades twice). Enemies are spaced out behind the
+ * entry so they stream in rather than all appear at once.
  */
 export function spawnWave(
   wave: number,
@@ -51,10 +91,12 @@ export function spawnWave(
   seed = 0,
 ): Enemy[] {
   const stats = waveStats(wave);
+  const groups = waveAssignments(pool, seed);
+  const w = Math.max(1, Math.min(TOTAL_WAVES, wave));
+  const countries = groups[w - 1] ?? [];
   const enemies: Enemy[] = [];
-  for (let i = 0; i < ENEMIES_PER_WAVE; i++) {
-    const idx = ((seed + wave * 7 + i * 3) % pool.length + pool.length) % pool.length;
-    const country = pool[idx];
+  for (let i = 0; i < countries.length; i++) {
+    const country = countries[i];
     const dist = -i * spacing; // staggered behind the entry
     enemies.push({
       id: nextId++,

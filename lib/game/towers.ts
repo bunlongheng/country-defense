@@ -30,7 +30,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     cost: 40,
     range: 2.6,
     damage: 7,
-    fireRate: 5,
+    fireRate: 3.2, // tuned down from 5 so the cheapest tower isn't OP
     splash: 0,
     slow: 0,
     chain: 0,
@@ -86,7 +86,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     cost: 60,
     range: 2,
     damage: 6,
-    fireRate: 9,
+    fireRate: 4.5, // still the fastest, but 9/s solo-cleared whole waves
     splash: 0,
     slow: 0,
     chain: 0,
@@ -105,12 +105,27 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     slow: 0,
     chain: 3,
   },
+  slime: {
+    type: "slime",
+    name: "Slime",
+    blurb: "Gooey blobs, sticks and slows",
+    color: "#84cc16",
+    icon: "🟢",
+    cost: 65,
+    range: 2.5,
+    damage: 8,
+    fireRate: 1.3,
+    splash: 0.9, // the goo splatters onto nearby foes
+    slow: 0.6, // stickiest slow in the game
+    chain: 0,
+  },
 };
 
 export const TOWER_ORDER: TowerType[] = [
   "laser",
   "rapid",
   "frost",
+  "slime",
   "cannon",
   "tesla",
   "sniper",
@@ -121,7 +136,11 @@ export const TOWER_ORDER: TowerType[] = [
 // lazily once instead of allocating a fresh spread object on every call.
 const STATS_CACHE = new Map<string, TowerDef>();
 
-/** Per-level stat multiplier: +45% damage and +12% range per level above 1. */
+/**
+ * Per-level stat multiplier: +45% damage and +12% range per level above 1.
+ * Fire rate only creeps up +8%/level so upgrades stay powerful through damage,
+ * not by turning towers into unstoppable machine guns.
+ */
 export function towerStats(type: TowerType, level: number): TowerDef {
   const lv = Math.max(1, Math.min(MAX_LEVEL, level));
   const key = `${type}${lv}`;
@@ -129,8 +148,9 @@ export function towerStats(type: TowerType, level: number): TowerDef {
   if (cached) return cached;
 
   const base = TOWER_DEFS[type];
+  // every level: +45% damage, +14% range, +15% fire rate (all three grow)
   const dmgMul = 1 + 0.45 * (lv - 1);
-  const rangeMul = 1 + 0.12 * (lv - 1);
+  const rangeMul = 1 + 0.14 * (lv - 1);
   const rateMul = 1 + 0.15 * (lv - 1);
   const stats: TowerDef = {
     ...base,

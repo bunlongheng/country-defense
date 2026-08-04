@@ -80,17 +80,20 @@ export function fireTowers(
   for (const tower of towers) {
     tower.cooldown -= dt;
     const target = pickTarget(tower, enemies);
-    const from = towerCenter(tower);
+    const center = towerCenter(tower);
     // rotate the barrel to track the target every frame (even while on cooldown),
     // and hold the last angle when nothing is in range - "follow as long as it can"
     if (target) {
-      tower.aim = Math.atan2(target.pos.y - from.y, target.pos.x - from.x);
+      tower.aim = Math.atan2(target.pos.y - center.y, target.pos.x - center.x);
     }
     if (tower.cooldown > 0 || !target) continue;
 
     const stats = towerStats(tower.type, tower.level);
     tower.cooldown = 1 / stats.fireRate;
     const slowDur = tower.type === "slime" ? SLIME_SLOW_DURATION : FROST_DURATION;
+    // shots leave the BARREL MUZZLE (offset along the aim), not the tower centre
+    const aim = tower.aim ?? 0;
+    const from = { x: center.x + Math.cos(aim) * 0.55, y: center.y + Math.sin(aim) * 0.55 };
 
     // primary hit
     applyHit(target, stats.damage, stats.slow, time, slowDur);

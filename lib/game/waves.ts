@@ -11,7 +11,9 @@ export const TOTAL_WAVES = 10;
 
 const BASE_HP = 34;
 const BASE_SPEED = 0.9; // tiles/sec
-const BASE_REWARD = 8;
+// Small per-kill reward: waves now have ~19 invaders each, so a low bounty keeps
+// gold reasonable and the game challenging instead of a runaway pile of cash.
+const BASE_REWARD = 4;
 
 export interface WaveStats {
   hp: number;
@@ -25,7 +27,7 @@ export function waveStats(wave: number): WaveStats {
   return {
     hp: Math.round(BASE_HP * Math.pow(1.28, w - 1)),
     speed: +(BASE_SPEED * Math.pow(1.07, w - 1)).toFixed(3),
-    reward: Math.round(BASE_REWARD + (w - 1) * 2),
+    reward: Math.round(BASE_REWARD + (w - 1) * 1),
   };
 }
 

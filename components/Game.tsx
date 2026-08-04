@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
@@ -64,10 +63,6 @@ const PATH_LEN = pathLength();
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
 const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
-// The home base is a real 3D glossy marble (same one as the picker), floated over
-// the 2D pedestal - far nicer than faking a spin on the flat canvas.
-const FlagMarble = dynamic(() => import("./FlagMarble"), { ssr: false });
-
 // Square build menu geometry: a 3x3 cluster. The center is the tile you are
 // about to build on; the 8 squares around it are the choices (7 towers + a
 // cancel). Offsets are grid steps of MENU_STEP px, clockwise from the top.
@@ -112,7 +107,6 @@ export default function Game({ code }: { code: string }) {
 
   // HUD state (updated from the loop only when a value changes)
   const [gold, setGold] = useState(START_GOLD);
-  const [lives, setLives] = useState(START_LIVES);
   const [wave, setWave] = useState(1);
   const [phase, setPhaseState] = useState<Phase>("ready");
   const [buildType, setBuildType] = useState<TowerType | null>("laser");
@@ -123,8 +117,6 @@ export default function Game({ code }: { code: string }) {
   const [countdown, setCountdown] = useState<number | null>(null);
   // bucket of already-defeated countries, most-defeated first (small flag circles)
   const [defeated, setDefeated] = useState<{ code: string; n: number }[]>([]);
-  // screen box for the floating 3D base marble (recomputed on resize)
-  const [baseBox, setBaseBox] = useState({ left: 0, top: 0, size: 0 });
   // how many defeated flags fit on one line (~95% of the width); the rest -> "+N"
   const flagW = 24; // px per flag incl. gap
   const [maxFlags, setMaxFlags] = useState(() =>
@@ -238,7 +230,6 @@ export default function Game({ code }: { code: string }) {
     livesRef.current = START_LIVES;
     waveRef.current = 1;
     setGold(START_GOLD);
-    setLives(START_LIVES);
     setWave(1);
     setSelected(null);
     setBuildType("laser");
@@ -274,13 +265,6 @@ export default function Game({ code }: { code: string }) {
       canvas.style.width = `${cell * GRID_COLS}px`;
       canvas.style.height = `${cell * GRID_ROWS}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // place the floating 3D marble over the base tile (offsets are within the
-      // relatively-positioned arena wrapper, same basis as the honeycomb menu)
-      setBaseBox({
-        left: canvas.offsetLeft + (BASE_CELL.x + 0.5) * cell,
-        top: canvas.offsetTop + (BASE_CELL.y + 0.5) * cell - cell * 0.12,
-        size: cell * 1.6,
-      });
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -295,7 +279,6 @@ export default function Game({ code }: { code: string }) {
       enemies.current = moved.survivors;
       if (moved.leaked > 0) {
         livesRef.current = Math.max(0, livesRef.current - moved.leaked);
-        setLives(livesRef.current);
         playLeak();
       }
       const fired = fireTowers(towers.current, enemies.current, dt, time.current);
@@ -630,11 +613,8 @@ export default function Game({ code }: { code: string }) {
         <span className="text-base font-black text-amber-300" title="Gold">
           🪙 {gold}
         </span>
-        {/* controls + health next to the flag - top right */}
+        {/* controls - top right (health now lives as a bar over the base) */}
         <div className="flex items-center gap-2">
-          <span className="mr-1 text-base font-black text-rose-400" title="Lives">
-            ❤️ {lives}
-          </span>
           <button
             onClick={togglePause}
             className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
@@ -708,23 +688,6 @@ export default function Game({ code }: { code: string }) {
             aria-label="Battle map - tap an open tile to open the tower menu, tap a tower to upgrade it"
             className="block touch-none rounded-2xl ring-1 ring-white/10"
           />
-
-          {/* real 3D glossy marble for the home base, floating over the pedestal */}
-          {baseBox.size > 0 && (
-            <div
-              className="pointer-events-none absolute z-[5]"
-              style={{
-                left: baseBox.left,
-                top: baseBox.top,
-                width: baseBox.size,
-                height: baseBox.size,
-                animation: "baseFloat 2.6s ease-in-out infinite",
-              }}
-            >
-              <FlagMarble code={code} spin interactive={false} />
-            </div>
-          )}
-          <style>{`@keyframes baseFloat{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(-50%,-57%)}}`}</style>
 
           {/* square build menu: 8 tiles around the center (the tile you're placing
               on stays open in the middle so it is never covered) */}

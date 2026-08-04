@@ -310,7 +310,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-    drawTower(ctx, p, cell, t, s.palette);
+    drawTower(ctx, p, cell, t, s.palette, s.code, s.time);
   }
 
   // build preview: highlight the tapped tile, its reach, and a ghost turret
@@ -338,6 +338,8 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
       cell,
       { id: -1, type: s.preview.type, cell: s.preview.cell, level: 1, cooldown: 0 },
       s.palette,
+      s.code,
+      s.time,
     );
     ctx.globalAlpha = 1;
   }
@@ -354,7 +356,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // home base: a spinning flag sphere floating above a cool themed pedestal.
   // As it loses lives it reddens, then smokes, then catches fire.
-  drawBase(ctx, toPx(BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives);
+  drawBase(ctx, toPx(BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives, s.code);
 
   // enemies
   for (const e of s.enemies) {
@@ -479,6 +481,8 @@ function drawTower(
   cell: number,
   t: Tower,
   palette: string[],
+  code: string,
+  time: number,
 ) {
   const def = TOWER_DEFS[t.type];
   // higher-level towers are physically bigger and beefier-looking
@@ -486,40 +490,44 @@ function drawTower(
   const c1 = palette[0] ?? "#64748b"; // the nation's main colour
 
   // ground shadow
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
   ctx.beginPath();
-  ctx.ellipse(p.x, p.y + R * 0.62, R * 0.5, R * 0.22, 0, 0, Math.PI * 2);
+  ctx.ellipse(p.x, p.y + R * 0.72, R * 0.82, R * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // armor hull: a clean rounded-square tank body in the nation's main colour,
-  // finished with a metallic gloss (no ugly rivets, no busy flag)
-  const plateR = R * 0.95;
+  // circular metallic armor base in the nation's colour, with a beveled rim
   const body = ctx.createRadialGradient(
-    p.x + LIGHT.x * plateR, p.y + LIGHT.y * plateR, plateR * 0.1, p.x, p.y, plateR * 1.25,
+    p.x + LIGHT.x * R, p.y + LIGHT.y * R, R * 0.1, p.x, p.y, R * 1.15,
   );
-  body.addColorStop(0, shade(c1, 0.4));
-  body.addColorStop(0.6, c1);
-  body.addColorStop(1, shade(c1, -0.5));
-  roundRect(ctx, p.x - plateR, p.y - plateR, plateR * 2, plateR * 2, plateR * 0.32);
+  body.addColorStop(0, shade(c1, 0.5));
+  body.addColorStop(0.68, c1);
+  body.addColorStop(1, shade(c1, -0.55));
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
   ctx.fillStyle = body;
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(0,0,0,0.55)";
+  ctx.lineWidth = R * 0.1; // dark beveled rim
+  ctx.strokeStyle = shade(c1, -0.55);
+  ctx.stroke();
+  ctx.lineWidth = 1.5; // thin bright highlight ring inside the rim
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, R * 0.86, 0, Math.PI * 2);
   ctx.stroke();
 
-  // barrel: rotates to track the current target (holds last angle when idle),
-  // so every turret visibly aims at the wave it is shooting
+  // barrel: rotates to track the target; shots leave its muzzle
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(t.aim ?? -Math.PI / 5);
-  const bg = ctx.createLinearGradient(0, -R * 0.16, 0, R * 0.16);
-  bg.addColorStop(0, shade(def.color, 0.3));
-  bg.addColorStop(1, shade(def.color, -0.5));
+  const bg = ctx.createLinearGradient(0, -R * 0.17, 0, R * 0.17);
+  bg.addColorStop(0, shade(def.color, 0.35));
+  bg.addColorStop(0.5, shade(def.color, -0.1));
+  bg.addColorStop(1, shade(def.color, -0.55));
   ctx.fillStyle = bg;
-  roundRect(ctx, 0, -R * 0.16, R * 1.15, R * 0.32, R * 0.12);
+  roundRect(ctx, R * 0.1, -R * 0.15, R * 1.2, R * 0.3, R * 0.1);
   ctx.fill();
-  ctx.fillStyle = shade(def.color, -0.3);
-  roundRect(ctx, R * 0.95, -R * 0.2, R * 0.22, R * 0.4, R * 0.06);
+  ctx.fillStyle = shade(def.color, -0.35); // muzzle collar
+  roundRect(ctx, R * 1.12, -R * 0.19, R * 0.2, R * 0.38, R * 0.05);
   ctx.fill();
   ctx.restore();
 
@@ -572,6 +580,58 @@ function drawTower(
   for (let i = 0; i < t.level; i++) {
     star(ctx, p.x - (t.level - 1) * R * 0.13 + i * R * 0.26, p.y + R * 0.72, R * 0.085, "#fbbf24");
   }
+
+  // a small national flag WAVING on a short pole at the back of the turret
+  towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id);
+}
+
+// A small cloth flag on a pole that ripples on a travelling sine. Sliced into
+// horizontal bands (each samples the FULL flag width) so the whole flag reads,
+// then each band is nudged sideways + a touch vertically to sell the wave.
+function towerFlag(
+  ctx: CanvasRenderingContext2D,
+  code: string,
+  baseX: number,
+  baseY: number,
+  R: number,
+  time: number,
+  phase: number,
+) {
+  const poleTop = baseY - R * 1.35;
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = Math.max(1.4, R * 0.055);
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  ctx.lineTo(baseX, poleTop);
+  ctx.stroke();
+  ctx.fillStyle = "#fde047"; // gold finial
+  ctx.beginPath();
+  ctx.arc(baseX, poleTop, R * 0.06, 0, Math.PI * 2);
+  ctx.fill();
+
+  const img = getFlagImage(code);
+  const w = R * 0.9;
+  const h = R * 0.58;
+  const fx = baseX + ctx.lineWidth * 0.5;
+  const fy = poleTop;
+  if (!img) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillRect(fx, fy, w, h);
+    return;
+  }
+  const nw = img.naturalWidth || 640;
+  const nh = img.naturalHeight || 480;
+  const bands = 10;
+  const bh = nh / bands;
+  for (let j = 0; j < bands; j++) {
+    const t2 = j / (bands - 1);
+    const shift = Math.sin(time * 5.5 + j * 0.6 + phase) * w * 0.08;
+    const rise = Math.cos(time * 5.5 + j * 0.6 + phase) * h * 0.05 * t2;
+    ctx.drawImage(img, 0, j * bh, nw, bh, fx + shift, fy + (j * h) / bands + rise, w, h / bands + 0.7);
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(fx, fy, w, h);
 }
 
 // Ice casing for a frozen enemy: a pale blue wash plus a few white crystals.
@@ -851,6 +911,7 @@ function drawBase(
   palette: string[],
   time: number,
   hurt: number, // fraction of lives lost, 0 (pristine) .. 1 (dead)
+  code: string,
 ) {
   const accent = palette[0] ?? "#38bdf8";
   const r = cell * 0.4;
@@ -920,6 +981,35 @@ function drawBase(
   ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
   ctx.fill();
 
+  // the spinning glossy flag marble, drawn in 2D so it works on EVERY device
+  // (the old WebGL overlay broke into a white box on some browsers)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  paintFlag(ctx, getFlagImage(code), cx, cy, r, time * cell * 0.55); // scroll = spin
+  sphereShade(ctx, cx, cy, r); // 3D spherical shading
+  if (red > 0) {
+    ctx.fillStyle = `rgba(220,38,38,${Math.min(0.5, red * 0.55)})`;
+    ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+  }
+  ctx.restore();
+  specular(ctx, cx, cy, r); // bright glossy glint
+
   // about to die: the base catches fire (small past 10 lost, a blaze past 15)
   if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.8 ? 2 : 1, time, 0);
+
+  // health bar above the base - replaces the heart HUD counter, ticks down as
+  // invaders leak through (just like an enemy's bar)
+  const frac = Math.max(0, 1 - hurt);
+  const bw = r * 2.1;
+  const bh = Math.max(4, cell * 0.07);
+  const by = cy - r - cell * 0.24;
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(cx - bw / 2, by, bw, bh);
+  ctx.fillStyle = frac > 0.5 ? "#34d399" : frac > 0.25 ? "#fbbf24" : "#f87171";
+  ctx.fillRect(cx - bw / 2, by, bw * frac, bh);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.strokeRect(cx - bw / 2, by, bw, bh);
 }

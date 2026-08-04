@@ -660,25 +660,76 @@ function drawFreeze(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: nu
 }
 
 // A jagged electric arc crackling over a shocked enemy (tesla).
+// A real-looking electrocution: a crackling electric-blue aura plus several
+// forked lightning arcs snaking ACROSS the sphere, drawn as a glowing blue
+// underlay with a white-hot core, flickering fast.
 function drawShock(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
-  ctx.strokeStyle = "#fde047";
-  ctx.lineWidth = 2;
-  ctx.shadowColor = "#facc15";
-  ctx.shadowBlur = 6;
-  const bolts = 4;
-  for (let b = 0; b < bolts; b++) {
-    const base = (b / bolts) * Math.PI * 2 + seed * 1.3 + time * 12;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    for (let s = 1; s <= 3; s++) {
-      const rad = (r * 1.2 * s) / 3;
-      const jitter = Math.sin(seed * 7.1 + b * 3.3 + s * 5.5 + time * 20) * 0.5;
-      const a = base + jitter;
-      ctx.lineTo(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
-    }
-    ctx.stroke();
+  // pulsing electric aura
+  const pulse = 0.35 + 0.25 * Math.sin(time * 34 + seed * 5);
+  const aura = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.55);
+  aura.addColorStop(0, "rgba(191,219,254,0)");
+  aura.addColorStop(0.6, `rgba(96,165,250,${pulse})`);
+  aura.addColorStop(1, "rgba(59,130,246,0)");
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 1.55, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.shadowColor = "#7dd3fc";
+  ctx.shadowBlur = 8;
+  const arcs = 3;
+  for (let b = 0; b < arcs; b++) {
+    // an arc from one point on the rim, across, to another point
+    const a0 = seed * 1.7 + b * 2.4 + Math.sin(time * 9 + b) * 0.5;
+    const a1 = a0 + 2.1 + Math.sin(time * 11 + seed + b) * 0.9;
+    const x0 = cx + Math.cos(a0) * r * 1.05;
+    const y0 = cy + Math.sin(a0) * r * 1.05;
+    const x1 = cx + Math.cos(a1) * r * 1.05;
+    const y1 = cy + Math.sin(a1) * r * 1.05;
+    // glow underlay (blue, thick) then hot core (white, thin)
+    lightning(ctx, x0, y0, x1, y1, r * 0.55, seed * 3 + b, time, "rgba(96,165,250,0.9)", 2.6);
+    lightning(ctx, x0, y0, x1, y1, r * 0.55, seed * 3 + b, time, "#ffffff", 1.2);
   }
-  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// A jagged lightning path between two points (midpoint displacement) with one
+// forked branch, drawn in `color` at `width`.
+function lightning(
+  ctx: CanvasRenderingContext2D,
+  x0: number, y0: number, x1: number, y1: number,
+  amp: number, seed: number, time: number, color: string, width: number,
+) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len; // perpendicular
+  const segs = 7;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  const pts: [number, number][] = [[x0, y0]];
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    const taper = 1 - Math.abs(t - 0.5) * 2; // 0 at ends, 1 in the middle
+    const off = Math.sin(seed * 3.1 + i * 2.7 + time * 45) * amp * taper;
+    const px = x0 + dx * t + nx * off;
+    const py = y0 + dy * t + ny * off;
+    pts.push([px, py]);
+    ctx.lineTo(px, py);
+  }
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+  // a short fork off the middle
+  const [mx, my] = pts[Math.floor(segs / 2)];
+  const fa = Math.atan2(dy, dx) + (Math.sin(seed * 9 + time * 20) > 0 ? 1 : -1) * 1.1;
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.lineTo(mx + Math.cos(fa) * amp * 0.8, my + Math.sin(fa) * amp * 0.8);
+  ctx.stroke();
 }
 
 // A filled 5-point star with a dark outline.

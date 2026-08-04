@@ -9,6 +9,7 @@ import {
   flagUrl,
 } from "@/lib/countries";
 import { startMenuMusic, stopMenuMusic } from "@/lib/game/music";
+import { Dices } from "lucide-react";
 
 // The WebGL marble is client-only and heavy; load it lazily so the picker paints
 // instantly and the 3D bundle never blocks first render. While it loads (or if
@@ -70,12 +71,22 @@ export default function CountrySelect({
           </div>
         </div>
 
-        <button
-          onClick={() => onStart(code)}
-          className="min-h-11 rounded-full bg-cyan-400 px-8 py-3.5 text-base font-bold text-black shadow-lg shadow-cyan-500/30 transition active:scale-95"
-        >
-          Defend {selected?.name}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onStart(code)}
+            className="min-h-11 rounded-full bg-cyan-400 px-8 py-3.5 text-base font-bold text-black shadow-lg shadow-cyan-500/30 transition active:scale-95"
+          >
+            Defend {selected?.name}
+          </button>
+          <button
+            onClick={() => setCode(COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)].code)}
+            aria-label="Pick a random country"
+            title="Random country"
+            className="flex min-h-11 items-center gap-1.5 rounded-full border border-white/20 px-4 py-3 text-sm font-bold text-white/80 transition active:scale-95"
+          >
+            <Dices className="h-5 w-5" /> Random
+          </button>
+        </div>
         <p className="text-xs text-white/55">Drag the marble to spin it</p>
       </section>
 

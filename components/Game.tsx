@@ -105,7 +105,7 @@ const Icon = {
 
 type Phase = "ready" | "wave" | "won" | "lost";
 
-export default function Game({ code }: { code: string }) {
+export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -696,6 +696,20 @@ export default function Game({ code }: { code: string }) {
             <p className="mb-5 text-[11px] text-white/45">
               Higher difficulty = tankier waves. Applies from the next wave.
             </p>
+            <button
+              onClick={() => {
+                if (
+                  typeof window === "undefined" ||
+                  towers.current.length === 0 ||
+                  window.confirm("Leave the battle and pick a new country? Progress will be lost.")
+                ) {
+                  onExit();
+                }
+              }}
+              className="mb-2 w-full rounded-lg border border-white/20 py-2.5 text-sm font-bold text-white/80 active:scale-95"
+            >
+              Change country
+            </button>
             <button
               onClick={() => setShowSettings(false)}
               className="w-full rounded-full bg-cyan-400 py-2.5 font-black text-black active:scale-95"

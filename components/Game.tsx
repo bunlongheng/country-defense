@@ -255,6 +255,9 @@ export default function Game({ code }: { code: string }) {
     const fresh = spawnWave(w, pool.current, 1.6, seedRef.current);
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
+    // the defeated strip shows only THIS wave's terminations - clear it each wave
+    defeatedRef.current = {};
+    setDefeated([]);
     countdownEndRef.current = null;
     shownCountdownRef.current = null;
     setCountdown(null);

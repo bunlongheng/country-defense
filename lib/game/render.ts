@@ -395,9 +395,9 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   drawParticles(ctx, cell, s.particles);
 }
 
-// A flickering flame: `level` 1 is a single small tongue, 2 is a bigger,
-// multi-tongue blaze with a warm glow. `time` drives the flicker, `phase`
-// de-syncs each enemy so they don't all flicker in lockstep.
+// Realistic fire: a warm glow + several swaying tongues, each filled with a
+// vertical heat gradient (white-hot base -> yellow -> orange -> smoky red tip)
+// and organic wobbling edges. `level` 2 is a bigger, wider blaze.
 function drawFire(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -407,44 +407,61 @@ function drawFire(
   time: number,
   phase: number,
 ) {
-  const tongues = level === 2 ? 4 : 1;
-  const scale = level === 2 ? 1.5 : 0.9;
-  // warm glow
-  const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, r * (level === 2 ? 1.5 : 1));
-  glow.addColorStop(0, `rgba(255,140,20,${level === 2 ? 0.5 : 0.3})`);
-  glow.addColorStop(1, "rgba(255,80,0,0)");
+  const big = level === 2;
+  const baseH = r * (big ? 1.8 : 1.15);
+  const baseW = r * (big ? 0.42 : 0.32);
+  const tongues = big ? 3 : 2;
+
+  // flickering warm glow
+  const flickG = 0.85 + 0.15 * Math.sin(time * 10 + phase);
+  const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, baseH * flickG);
+  glow.addColorStop(0, `rgba(255,160,50,${big ? 0.5 : 0.32})`);
+  glow.addColorStop(0.5, "rgba(255,90,10,0.18)");
+  glow.addColorStop(1, "rgba(255,60,0,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(cx, cy, r * (level === 2 ? 1.5 : 1), 0, Math.PI * 2);
+  ctx.arc(cx, cy - baseH * 0.3, baseH * flickG, 0, Math.PI * 2);
   ctx.fill();
 
-  for (let i = 0; i < tongues; i++) {
-    const fx = cx + (i - (tongues - 1) / 2) * r * 0.32;
-    const flick = 0.7 + 0.3 * Math.sin(time * 14 + i * 1.7 + phase);
-    const h = r * scale * flick;
-    const w = r * 0.28 * scale;
-    // outer (orange)
-    flameShape(ctx, fx, cy, w, h, "#f97316");
-    // inner (yellow)
-    flameShape(ctx, fx, cy, w * 0.55, h * 0.7, "#fde047");
+  ctx.globalCompositeOperation = "lighter"; // flames add up where they overlap
+  for (let k = 0; k < tongues; k++) {
+    const mid = (tongues - 1) / 2;
+    const fx = cx + (k - mid) * baseW * 1.15;
+    const t = time * 12 + k * 2.3 + phase;
+    const flick = 0.72 + 0.28 * Math.sin(t);
+    const h = baseH * flick * (k === Math.round(mid) ? 1 : 0.78);
+    const w = baseW * (0.85 + 0.25 * Math.sin(t * 0.8 + 1));
+    // heat gradient up the flame
+    const g = ctx.createLinearGradient(0, cy + h * 0.1, 0, cy - h);
+    g.addColorStop(0, "rgba(255,245,220,0.95)"); // white-hot base
+    g.addColorStop(0.22, "#fde047"); // yellow
+    g.addColorStop(0.55, "#f97316"); // orange
+    g.addColorStop(0.85, "#dc2626"); // red
+    g.addColorStop(1, "rgba(120,20,10,0)"); // smoky, fading tip
+    ctx.fillStyle = g;
+    flameShape(ctx, fx, cy, w, h, t);
   }
+  ctx.globalCompositeOperation = "source-over";
 }
 
+// One organic flame tongue with wobbling sides, swaying on `t`.
 function flameShape(
   ctx: CanvasRenderingContext2D,
   x: number,
   baseY: number,
   w: number,
   h: number,
-  color: string,
+  t: number,
 ) {
+  const sway = Math.sin(t * 0.9) * w * 0.5; // the tip leans as it flickers
+  const bulge = 0.55 + 0.15 * Math.sin(t * 1.3);
+  const tipX = x + sway;
   ctx.beginPath();
-  ctx.moveTo(x, baseY - h); // tip
-  ctx.quadraticCurveTo(x + w, baseY - h * 0.4, x + w * 0.6, baseY);
-  ctx.quadraticCurveTo(x, baseY + h * 0.12, x - w * 0.6, baseY);
-  ctx.quadraticCurveTo(x - w, baseY - h * 0.4, x, baseY - h);
+  ctx.moveTo(x - w * 0.55, baseY);
+  ctx.bezierCurveTo(x - w * bulge, baseY - h * 0.45, tipX - w * 0.35, baseY - h * 0.75, tipX, baseY - h);
+  ctx.bezierCurveTo(tipX + w * 0.35, baseY - h * 0.75, x + w * bulge, baseY - h * 0.45, x + w * 0.55, baseY);
+  ctx.quadraticCurveTo(x, baseY + h * 0.14, x - w * 0.55, baseY);
   ctx.closePath();
-  ctx.fillStyle = color;
   ctx.fill();
 }
 
@@ -927,51 +944,91 @@ function drawBase(
   const cy = center.y - cell * 0.12 - bob; // sphere floats in the upper part of the tile
   const padY = center.y + cell * 0.62; // pedestal base sits low / just below the tile
 
-  // --- pedestal: glowing pad + tapered column ---
-  const glow = ctx.createRadialGradient(cx, padY, 1, cx, padY, cell * 0.85);
-  glow.addColorStop(0, hexA(accent, 0.55));
+  // --- futuristic hover pad ---
+  const padRx = cell * 0.52;
+  const padRy = cell * 0.19;
+  // ground energy glow
+  const glow = ctx.createRadialGradient(cx, padY, 1, cx, padY, cell * 0.95);
+  glow.addColorStop(0, hexA(accent, 0.5));
   glow.addColorStop(1, hexA(accent, 0));
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.ellipse(cx, padY, cell * 0.72, cell * 0.3, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, padY, cell * 0.85, cell * 0.36, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // column (tapered pillar from pad up toward the sphere)
-  const colTop = cy + r * 0.6;
-  const colG = ctx.createLinearGradient(cx - cell * 0.2, 0, cx + cell * 0.2, 0);
-  colG.addColorStop(0, shade(accent, -0.5));
-  colG.addColorStop(0.5, shade(accent, 0.15));
-  colG.addColorStop(1, shade(accent, -0.5));
-  ctx.fillStyle = colG;
+  // pulsing concentric energy rings expanding across the pad
+  for (let k = 0; k < 2; k++) {
+    const tk = (time * 0.55 + k * 0.5) % 1;
+    ctx.globalAlpha = (1 - tk) * 0.5;
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, padY, padRx * (0.4 + tk * 0.9), padRy * (0.4 + tk * 0.9), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // dark tech platform disc
+  const pg = ctx.createLinearGradient(0, padY - padRy, 0, padY + padRy);
+  pg.addColorStop(0, "#333c4a");
+  pg.addColorStop(1, "#0b0e14");
+  ctx.fillStyle = pg;
   ctx.beginPath();
-  ctx.moveTo(cx - cell * 0.13, colTop);
-  ctx.lineTo(cx + cell * 0.13, colTop);
-  ctx.lineTo(cx + cell * 0.22, padY);
-  ctx.lineTo(cx - cell * 0.22, padY);
+  ctx.ellipse(cx, padY, padRx, padRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // glowing neon rim
+  ctx.save();
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, padY, padRx * 0.9, padRy * 0.9, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // tech notches around the rim
+  ctx.strokeStyle = hexA(accent, 0.7);
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const c = Math.cos(a), s = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(cx + c * padRx * 0.9, padY + s * padRy * 0.9);
+    ctx.lineTo(cx + c * padRx * 1.02, padY + s * padRy * 1.02);
+    ctx.stroke();
+  }
+
+  // holographic lift beam with rising scanlines
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - padRx * 0.55, padY);
+  ctx.lineTo(cx - r * 0.6, cy);
+  ctx.lineTo(cx + r * 0.6, cy);
+  ctx.lineTo(cx + padRx * 0.55, padY);
   ctx.closePath();
-  ctx.fill();
-
-  // pad plate (glossy ellipse on top of the column)
-  ctx.fillStyle = shade(accent, 0.1);
-  ctx.beginPath();
-  ctx.ellipse(cx, padY, cell * 0.34, cell * 0.13, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.18)";
-  ctx.beginPath();
-  ctx.ellipse(cx, padY - cell * 0.02, cell * 0.24, cell * 0.07, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // hover light beam from pad up to the floating sphere
-  const beam = ctx.createLinearGradient(0, padY, 0, cy);
-  beam.addColorStop(0, hexA(accent, 0.35));
+  ctx.clip();
+  const beam = ctx.createLinearGradient(0, padY, 0, cy - r);
+  beam.addColorStop(0, hexA(accent, 0.4));
   beam.addColorStop(1, hexA(accent, 0));
   ctx.fillStyle = beam;
+  ctx.fillRect(cx - padRx, cy - r, padRx * 2, padY - (cy - r));
+  ctx.strokeStyle = hexA(accent, 0.3);
+  ctx.lineWidth = 1;
+  const scan = (time * 22) % 7;
+  for (let y = cy - r; y < padY; y += 7) {
+    ctx.beginPath();
+    ctx.moveTo(cx - padRx, y + scan);
+    ctx.lineTo(cx + padRx, y + scan);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // bright energy core on the pad
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.beginPath();
-  ctx.moveTo(cx - cell * 0.28, padY);
-  ctx.lineTo(cx - r * 0.5, cy);
-  ctx.lineTo(cx + r * 0.5, cy);
-  ctx.lineTo(cx + cell * 0.28, padY);
-  ctx.closePath();
+  ctx.ellipse(cx, padY, padRx * 0.16, padRy * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // --- glow behind the real 3D marble (rendered as a WebGL overlay in React) ---

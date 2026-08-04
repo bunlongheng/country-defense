@@ -78,12 +78,58 @@ const MENU_AROUND: [number, number][] = [
   [-1, -1],
 ];
 
+// Inline SVG icons (no emoji, no external requests - keeps the CSP at 'self').
+const IC = "h-4 w-4 sm:h-5 sm:w-5";
+const Icon = {
+  Wave: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+      <path d="M2 14c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+    </svg>
+  ),
+  Coin: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.2v9.6M14.3 9.2a2.5 2 0 0 0-4.6 1c0 2.6 4.8 1.1 4.8 3.6a2.5 2 0 0 1-4.6 1" fill="none" stroke="#7c4a03" strokeWidth={1.6} strokeLinecap="round" />
+    </svg>
+  ),
+  Skull: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <path d="M12 2a8 8 0 0 0-8 8v3.2l1.6 1.9V19h2.3v-2h1.1v2h2v-2h1.1v2h2.3v-3.9L20 13.2V10a8 8 0 0 0-8-8Z" />
+      <circle cx="9" cy="11" r="1.6" fill="#0b0e14" />
+      <circle cx="15" cy="11" r="1.6" fill="#0b0e14" />
+    </svg>
+  ),
+  Pause: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </svg>
+  ),
+  Play: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <path d="M7 5l12 7-12 7z" />
+    </svg>
+  ),
+  SoundOn: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <path d="M4 9v6h4l5 4V5L8 9H4z" />
+      <path d="M16.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+    </svg>
+  ),
+  SoundOff: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="currentColor">
+      <path d="M4 9v6h4l5 4V5L8 9H4z" />
+      <path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+    </svg>
+  ),
+};
+
 type Phase = "ready" | "wave" | "won" | "lost";
 
 export default function Game({ code }: { code: string }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
 
   // mutable simulation state (kept in refs so the rAF loop never re-renders)
   const enemies = useRef<Enemy[]>([]);
@@ -115,7 +161,6 @@ export default function Game({ code }: { code: string }) {
   const [speed, setSpeed] = useState(1);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [isFs, setIsFs] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   // bucket of already-defeated countries, most-defeated first (small flag circles)
   const [defeated, setDefeated] = useState<{ code: string; n: number }[]>([]);
@@ -578,17 +623,6 @@ export default function Game({ code }: { code: string }) {
     pausedRef.current = !pausedRef.current;
     setPaused(pausedRef.current);
   };
-  const toggleFullscreen = () => {
-    const el = rootRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) el.requestFullscreen?.().catch(() => {});
-    else document.exitFullscreen?.().catch(() => {});
-  };
-  useEffect(() => {
-    const onFs = () => setIsFs(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
 
   // clean up the hint timer on unmount
   useEffect(() => () => {
@@ -599,67 +633,57 @@ export default function Game({ code }: { code: string }) {
 
   return (
     <div
-      ref={rootRef}
       className="flex h-dvh flex-col overflow-hidden bg-black text-white"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      {/* top HUD */}
+      {/* top HUD - real icons, responsive (wraps on narrow screens) */}
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3"
-        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 sm:px-4 sm:py-3"
+        style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
       >
-        {/* wave number + auto-start countdown - top left */}
-        <span className="text-base font-black text-cyan-400" title="Wave">
-          🌊 {wave}/{TOTAL_WAVES}
+        {/* wave + auto-start countdown */}
+        <span className="flex items-center gap-1.5 text-sm font-black text-cyan-400 sm:text-base" title="Wave">
+          <Icon.Wave />
+          {wave}/{TOTAL_WAVES}
           {phase === "ready" && countdown !== null && (
-            <span className="ml-1 font-bold text-white/70">· {countdown}s</span>
+            <span className="font-bold text-white/70">· {countdown}s</span>
           )}
         </span>
-        {/* gold + terminated count - center */}
-        <div className="flex items-center gap-4">
-          <span className="text-base font-black text-amber-300" title="Gold">
-            🪙 {gold}
+        {/* gold + terminated */}
+        <div className="flex items-center gap-3 sm:gap-4">
+          <span className="flex items-center gap-1.5 text-sm font-black text-amber-300 sm:text-base" title="Gold">
+            <Icon.Coin />
+            {gold}
           </span>
-          <span className="text-base font-black text-white/80" title="Terminated">
-            💀 {kills}
+          <span className="flex items-center gap-1.5 text-sm font-black text-white/85 sm:text-base" title="Terminated">
+            <Icon.Skull />
+            {kills}
           </span>
         </div>
-        {/* controls - top right (health now lives as a bar over the base) */}
-        <div className="flex items-center gap-2">
+        {/* controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={togglePause}
-            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
             aria-label={paused ? "Resume" : "Pause"}
             aria-pressed={paused}
-            title={paused ? "Resume" : "Pause"}
           >
-            {paused ? "▶️" : "⏸️"}
+            {paused ? <Icon.Play /> : <Icon.Pause />}
           </button>
           <button
             onClick={cycleSpeed}
-            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-sm font-bold text-cyan-300 active:scale-95"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-black text-cyan-300 active:scale-95"
             aria-label={`Game speed ${speed} times, tap to change`}
-            title="Fast-forward"
           >
             {speed}x
           </button>
           <button
             onClick={onToggleMute}
-            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
             aria-label={muted ? "Unmute sound" : "Mute sound"}
             aria-pressed={muted}
-            title={muted ? "Unmute" : "Mute"}
           >
-            {muted ? "🔇" : "🔊"}
-          </button>
-          <button
-            onClick={toggleFullscreen}
-            className="min-h-9 rounded-lg border border-white/15 px-2.5 py-1 text-base active:scale-95"
-            aria-label={isFs ? "Exit full screen" : "Enter full screen"}
-            aria-pressed={isFs}
-            title={isFs ? "Exit full screen" : "Full screen"}
-          >
-            {isFs ? "🗗" : "⛶"}
+            {muted ? <Icon.SoundOff /> : <Icon.SoundOn />}
           </button>
           <div
             className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"

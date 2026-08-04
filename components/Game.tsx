@@ -40,6 +40,8 @@ import {
   waveClearBonus,
   TOTAL_WAVES,
   resetEnemyIds,
+  DIFFICULTY,
+  type Difficulty,
 } from "@/lib/game/waves";
 import {
   moveEnemies,
@@ -123,6 +125,12 @@ const Icon = {
       <path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
     </svg>
   ),
+  Gear: () => (
+    <svg viewBox="0 0 24 24" className={IC} fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.2v2.4M12 19.4v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.2 12h2.4M19.4 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 type Phase = "ready" | "wave" | "won" | "lost";
@@ -161,6 +169,9 @@ export default function Game({ code }: { code: string }) {
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>("Normal");
+  const difficultyRef = useRef<Difficulty>("Normal");
+  const [showSettings, setShowSettings] = useState(false);
   // honeycomb build menu: opened by tapping an empty buildable tile
   const [menu, setMenu] = useState<{
     col: number;
@@ -239,7 +250,7 @@ export default function Game({ code }: { code: string }) {
   const startWave = useCallback(() => {
     if (phaseRef.current !== "ready") return;
     const w = waveRef.current;
-    const fresh = spawnWave(w, pool.current, 1.6, seedRef.current);
+    const fresh = spawnWave(w, pool.current, 1.6, seedRef.current, DIFFICULTY[difficultyRef.current]);
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
     countdownEndRef.current = null;
@@ -642,12 +653,11 @@ export default function Game({ code }: { code: string }) {
         {/* controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
-            onClick={togglePause}
+            onClick={() => setShowSettings(true)}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
-            aria-label={paused ? "Resume" : "Pause"}
-            aria-pressed={paused}
+            aria-label="Settings"
           >
-            {paused ? <Icon.Play /> : <Icon.Pause />}
+            <Icon.Gear />
           </button>
           <button
             onClick={cycleSpeed}
@@ -673,6 +683,58 @@ export default function Game({ code }: { code: string }) {
           />
         </div>
       </div>
+
+      {/* settings panel: pause/resume + difficulty */}
+      {showSettings && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onPointerDown={() => setShowSettings(false)}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl border border-white/15 bg-neutral-900 p-5 text-center shadow-2xl"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-center gap-2 text-lg font-black">
+              <Icon.Gear /> Settings
+            </div>
+            <button
+              onClick={togglePause}
+              className="mb-5 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 py-2.5 font-bold active:scale-95"
+            >
+              {paused ? <Icon.Play /> : <Icon.Pause />}
+              {paused ? "Resume" : "Pause"}
+            </button>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/50">
+              Difficulty
+            </div>
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {(["Easy", "Normal", "Hard"] as Difficulty[]).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => {
+                    difficultyRef.current = d;
+                    setDifficulty(d);
+                  }}
+                  className={`rounded-lg py-2 text-sm font-bold active:scale-95 ${
+                    difficulty === d ? "bg-cyan-400 text-black" : "bg-white/10 text-white/80"
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+            <p className="mb-5 text-[11px] text-white/45">
+              Higher difficulty = tankier waves. Applies from the next wave.
+            </p>
+            <button
+              onClick={() => setShowSettings(false)}
+              className="w-full rounded-full bg-cyan-400 py-2.5 font-black text-black active:scale-95"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* arena - fills all remaining space; the board is fit to this box */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center px-1 sm:px-2">

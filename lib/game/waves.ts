@@ -21,11 +21,16 @@ export interface WaveStats {
   reward: number;
 }
 
-/** Difficulty for a given wave (1-indexed): +28% hp and +7% speed each wave. */
-export function waveStats(wave: number): WaveStats {
+// Per-wave HP growth for each difficulty (speed grows +7%/wave regardless).
+// Easy waves get a touch tankier each time; Hard nearly doubles the ramp.
+export const DIFFICULTY = { Easy: 1.22, Normal: 1.38, Hard: 1.55 } as const;
+export type Difficulty = keyof typeof DIFFICULTY;
+
+/** Difficulty for a given wave (1-indexed): +hpGrowth hp and +7% speed each wave. */
+export function waveStats(wave: number, hpGrowth: number = DIFFICULTY.Normal): WaveStats {
   const w = Math.max(1, wave);
   return {
-    hp: Math.round(BASE_HP * Math.pow(1.28, w - 1)),
+    hp: Math.round(BASE_HP * Math.pow(hpGrowth, w - 1)),
     speed: +(BASE_SPEED * Math.pow(1.07, w - 1)).toFixed(3),
     reward: Math.round(BASE_REWARD + (w - 1) * 1),
   };
@@ -91,8 +96,9 @@ export function spawnWave(
   pool: Country[],
   spacing = 1.6,
   seed = 0,
+  hpGrowth: number = DIFFICULTY.Normal,
 ): Enemy[] {
-  const stats = waveStats(wave);
+  const stats = waveStats(wave, hpGrowth);
   const groups = waveAssignments(pool, seed);
   const w = Math.max(1, Math.min(TOTAL_WAVES, wave));
   const countries = groups[w - 1] ?? [];

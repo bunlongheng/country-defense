@@ -1072,17 +1072,19 @@ function drawBase(
   // as it dies the base catches fire, and on death it burns hardest
   if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.75 ? 2 : 1, time, 0);
 
-  // health bar above the base - replaces the heart HUD counter, ticks down as
-  // invaders leak through (just like an enemy's bar)
+  // health bar above the base (ticks down as invaders leak) - hidden once the
+  // base is destroyed, an empty bar there is just noise
   const frac = Math.max(0, 1 - hurt);
-  const bw = r * 2.1;
-  const bh = Math.max(4, cell * 0.07);
-  const by = cy - r - cell * 0.24;
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(cx - bw / 2, by, bw, bh);
-  ctx.fillStyle = frac > 0.5 ? "#34d399" : frac > 0.25 ? "#fbbf24" : "#f87171";
-  ctx.fillRect(cx - bw / 2, by, bw * frac, bh);
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(0,0,0,0.5)";
-  ctx.strokeRect(cx - bw / 2, by, bw, bh);
+  if (frac > 0.001) {
+    const bw = r * 2.1;
+    const bh = Math.max(4, cell * 0.07);
+    const by = cy - r - cell * 0.24;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(cx - bw / 2, by, bw, bh);
+    ctx.fillStyle = frac > 0.5 ? "#34d399" : frac > 0.25 ? "#fbbf24" : "#f87171";
+    ctx.fillRect(cx - bw / 2, by, bw * frac, bh);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.strokeRect(cx - bw / 2, by, bw, bh);
+  }
 }

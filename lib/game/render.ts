@@ -24,7 +24,7 @@ export interface DrawState {
   buildType: TowerType | null;
   cursor?: { x: number; y: number } | null;
   preview?: { cell: Vec2; type: TowerType } | null; // ghost + range for the honeycomb pick
-  nuke?: { x: number; y: number; radius: number; armed: boolean } | null; // targeting reticle
+  nuke?: { x: number; y: number; radius: number; armed: boolean; counting: boolean } | null; // reticle / portal
   nukeBlast?: { x: number; y: number; born: number } | null; // missile drop + mushroom cloud
   stageId?: number; // which stage's map + scenery to draw (1..10)
   scenery?: Scenery; // ground/road/decor theme for the current stage
@@ -621,10 +621,10 @@ function drawNukeBlast(
   const gy = (bl.y + 0.5) * cell; // ground zero
   const age = time - bl.born;
 
-  // ---- incoming warhead (the "bullet") ----
+  // ---- incoming warhead (the "bullet"), riding the beam down from the sky ----
   if (age < 0.35) {
     const t = age / 0.35;
-    const y = gy - (1 - t) * cell * 6; // falls from 6 tiles up
+    const y = -cell + t * (gy + cell); // falls from above the top edge to ground zero
     const L = cell * 0.5;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
@@ -740,19 +740,67 @@ function drawNukeBlast(
   ctx.restore();
 }
 
-// A menacing targeting reticle for the nuke: a filled red danger zone, a dashed
-// spinning ring at the blast radius, and a crosshair on the exact target.
+// The nuke's target marker. While AIMING it's a menacing red reticle. Once the
+// target is LOCKED and the countdown runs (`counting`), it becomes a fast-
+// spinning, glowing summoning portal firing a huge vertical beam to the sky -
+// the beacon the warhead rides down.
 function drawNukeReticle(
   ctx: CanvasRenderingContext2D,
   cell: number,
-  n: { x: number; y: number; radius: number; armed: boolean },
+  n: { x: number; y: number; radius: number; armed: boolean; counting: boolean },
   time: number,
 ) {
   const cx = (n.x + 0.5) * cell;
   const cy = (n.y + 0.5) * cell;
   const R = n.radius * cell;
   const pulse = 0.5 + 0.5 * Math.sin(time * 6);
-  // danger fill
+
+  if (n.counting) {
+    const p = 0.65 + 0.35 * Math.abs(Math.sin(time * 9)); // fast throb
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    // HUGE vertical beam from ground zero straight up to the sky
+    const bw = cell * (0.4 + 0.3 * p);
+    const beam = ctx.createLinearGradient(cx - bw, 0, cx + bw, 0);
+    beam.addColorStop(0, "rgba(255,70,30,0)");
+    beam.addColorStop(0.5, `rgba(255,130,60,${0.55 * p})`);
+    beam.addColorStop(1, "rgba(255,70,30,0)");
+    ctx.fillStyle = beam;
+    ctx.fillRect(cx - bw, 0, bw * 2, cy);
+    const cw = bw * 0.34; // white-hot core
+    const core = ctx.createLinearGradient(cx - cw, 0, cx + cw, 0);
+    core.addColorStop(0, "rgba(255,255,255,0)");
+    core.addColorStop(0.5, `rgba(255,255,245,${0.85 * p})`);
+    core.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = core;
+    ctx.fillRect(cx - cw, 0, cw * 2, cy);
+    // glowing disc at the base of the beam
+    const disc = ctx.createRadialGradient(cx, cy, 1, cx, cy, R);
+    disc.addColorStop(0, `rgba(255,170,70,${0.5 * p})`);
+    disc.addColorStop(1, "rgba(255,90,20,0)");
+    ctx.fillStyle = disc;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // fast-spinning summoning rings
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (let k = 0; k < 3; k++) {
+      ctx.rotate(time * (7 - k * 1.5) + k);
+      ctx.strokeStyle = `rgba(255,${110 + k * 45},60,${0.75 * p})`;
+      ctx.lineWidth = cell * 0.09;
+      ctx.setLineDash([cell * 0.55, cell * 0.3]);
+      ctx.beginPath();
+      ctx.arc(0, 0, R * (0.4 + k * 0.28), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+    return;
+  }
+
+  // ---- aiming reticle ----
   const g = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
   g.addColorStop(0, `rgba(239,68,68,${0.12 + pulse * 0.12})`);
   g.addColorStop(1, "rgba(239,68,68,0.02)");
@@ -760,7 +808,6 @@ function drawNukeReticle(
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.fill();
-  // spinning dashed blast ring
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(n.armed ? time * 1.2 : -time * 2);
@@ -772,7 +819,6 @@ function drawNukeReticle(
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
-  // crosshair
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.lineWidth = 2;
   const ch = cell * 0.5;
@@ -992,12 +1038,19 @@ function drawTower(
   ctx.fill();
   ctx.restore();
 
-  // emblem glyph so kids can still tell the towers apart at a glance
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = `${Math.round(cell * 0.3)}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(def.icon, p.x, p.y + 1);
+  // emblem so kids can tell the towers apart - the two that used emoji now get
+  // real drawn vector icons; the rest are clean unicode symbols
+  if (t.type === "bomber") {
+    drawBombEmblem(ctx, p.x, p.y, cell * 0.34);
+  } else if (t.type === "slime") {
+    drawSlimeEmblem(ctx, p.x, p.y, cell * 0.34);
+  } else {
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = `${Math.round(cell * 0.3)}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(def.icon, p.x, p.y + 1);
+  }
 
   // The tower earns a waving national flag from level 3 up, growing each level:
   // small at lvl3, medium at lvl4, biggest at lvl5. (Level is read off the star
@@ -1006,6 +1059,67 @@ function drawTower(
     const flagScale = t.level === 3 ? 0.72 : t.level === 4 ? 1 : 1.3;
     towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
   }
+}
+
+// A real bomb icon (round body + lit fuse) drawn as vector art - no emoji.
+function drawBombEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.52;
+  const by = cy + r * 0.22;
+  // body: dark sphere with a soft top-left highlight so it reads as round
+  const g = ctx.createRadialGradient(cx - r * 0.35, by - r * 0.35, r * 0.15, cx, by, r);
+  g.addColorStop(0, "#5b6472");
+  g.addColorStop(1, "#0a0d13");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.07); // bright rim so it pops on the dark dome
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.7)"; // glint
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.32, by - r * 0.3, r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  // fuse
+  const fx = cx + r * 0.75, fy = by - r * 1.45;
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = Math.max(1, s * 0.11);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.1, by - r * 0.9);
+  ctx.quadraticCurveTo(cx + r * 0.7, by - r * 1.2, fx, fy);
+  ctx.stroke();
+  // spark
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const sp = s * 0.26;
+  const sg = ctx.createRadialGradient(fx, fy, 1, fx, fy, sp);
+  sg.addColorStop(0, "rgba(255,255,220,1)");
+  sg.addColorStop(0.5, "rgba(255,170,40,0.9)");
+  sg.addColorStop(1, "rgba(255,120,0,0)");
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(fx, fy, sp, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// A real slime-droplet icon (teardrop + shine) drawn as vector art - no emoji.
+function drawSlimeEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.46;
+  ctx.fillStyle = "#365314"; // dark green drop on the lime dome
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 1.35);
+  ctx.bezierCurveTo(cx + r * 1.25, cy - r * 0.15, cx + r, cy + r, cx, cy + r);
+  ctx.bezierCurveTo(cx - r, cy + r, cx - r * 1.25, cy - r * 0.15, cx, cy - r * 1.35);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.65)"; // shine
+  ctx.beginPath();
+  ctx.ellipse(cx - r * 0.32, cy - r * 0.05, r * 0.16, r * 0.3, -0.3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // A realistic waving flag on a pole. The flag is sliced into VERTICAL columns

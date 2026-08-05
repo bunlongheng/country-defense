@@ -10,7 +10,6 @@ import {
   Volume2,
   VolumeX,
   Settings,
-  Radiation,
 } from "lucide-react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
@@ -202,6 +201,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const nukeTargetRef = useRef<{ x: number; y: number } | null>(null);
   const nukeAimRef = useRef<{ x: number; y: number } | null>(null); // pointer while aiming
   const nukeBlastRef = useRef<{ x: number; y: number; born: number } | null>(null); // warhead + cloud
+  const baseTapRef = useRef({ n: 0, t: 0 }); // secret: tap the base 5x to arm the nuke
   const [nukeUsed, setNukeUsed] = useState(false);
   const [nukeArmed, setNukeArmed] = useState(false);
   const [nukeCount, setNukeCount] = useState<number | null>(null); // 3/2/1 overlay
@@ -491,9 +491,16 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     // the nuke reticle to draw: the locked target during countdown, otherwise the
     // live aim point while the player is choosing where to strike
     const nukeRender = () => {
-      const t = nukeTargetRef.current ?? (nukeArmedRef.current ? nukeAimRef.current : null);
+      const locked = nukeTargetRef.current;
+      const t = locked ?? (nukeArmedRef.current ? nukeAimRef.current : null);
       return t
-        ? { x: t.x, y: t.y, radius: NUKE_RADIUS, armed: nukeArmedRef.current && !nukeTargetRef.current }
+        ? {
+            x: t.x,
+            y: t.y,
+            radius: NUKE_RADIUS,
+            armed: nukeArmedRef.current && !locked,
+            counting: !!locked, // target locked -> spinning portal + beam to the sky
+          }
         : null;
     };
 
@@ -742,8 +749,26 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       return;
     }
     cursorRef.current = null; // pointer play hides the keyboard cursor
-    const col = Math.floor((e.clientX - rect.left) / cell);
-    const row = Math.floor((e.clientY - rect.top) / cell);
+    const fx = (e.clientX - rect.left) / cell;
+    const fy = (e.clientY - rect.top) / cell;
+    const col = Math.floor(fx);
+    const row = Math.floor(fy);
+
+    // secret nuke: tap the home base 5 times (quickly) to arm the one-per-game strike.
+    // The base marble is bigger than a tile, so accept taps within ~1.2 tiles of it.
+    const distToBase = Math.hypot(fx - (baseRef.current.x + 0.5), fy - (baseRef.current.y + 0.5));
+    if (distToBase < 1.2) {
+      const now = performance.now();
+      if (now - baseTapRef.current.t > 1500) baseTapRef.current.n = 0; // reset if too slow
+      baseTapRef.current = { n: baseTapRef.current.n + 1, t: now };
+      if (baseTapRef.current.n >= 5) {
+        baseTapRef.current.n = 0;
+        armNuke(); // no-ops if already used/armed
+      } else if (baseTapRef.current.n >= 3 && !nukeUsed) {
+        flash(`Nuke in ${5 - baseTapRef.current.n}...`);
+      }
+      return;
+    }
 
     const existing = towers.current.find((t) => t.cell.x === col && t.cell.y === row);
     if (existing) {
@@ -1035,22 +1060,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             <Icon.Skull />
             {kills}
           </span>
-          {/* nuke: one strike per game */}
-          {!nukeUsed && (
-            <button
-              onClick={armNuke}
-              className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-black active:scale-95 ${
-                nukeArmed
-                  ? "animate-pulse border-rose-400 bg-rose-500/30 text-rose-100"
-                  : "border-rose-500/60 bg-rose-600/20 text-rose-300"
-              }`}
-              aria-label="Nuke - one strike per game"
-              title="Nuke (one strike per game)"
-            >
-              <Radiation className="h-4 w-4 sm:h-5 sm:w-5" />
-              {nukeArmed ? "Tap map" : "NUKE"}
-            </button>
-          )}
         </div>
         {/* controls */}
         <div className="flex items-center gap-3 sm:gap-4">
@@ -1076,13 +1085,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           >
             {muted ? <Icon.SoundOff /> : <Icon.SoundOn />}
           </button>
-          <div
-            className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
-            style={{ backgroundImage: `url(${flagUrl(code)})` }}
-            title={country.name}
-            role="img"
-            aria-label={`Defending ${country.name}`}
-          />
+          <div className="flex items-center gap-1.5">
+            <span className="max-w-[8rem] truncate text-sm font-black text-white/90 sm:text-base">
+              {country.name}
+            </span>
+            <div
+              className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
+              style={{ backgroundImage: `url(${flagUrl(code)})` }}
+              title={country.name}
+              role="img"
+              aria-label={`Defending ${country.name}`}
+            />
+          </div>
         </div>
       </div>
 

@@ -102,6 +102,8 @@ export function fireTowers(
     const stats = towerStats(tower.type, tower.level);
     tower.cooldown = 1 / stats.fireRate;
     const slowDur = tower.type === "slime" ? SLIME_SLOW_DURATION : FROST_DURATION;
+    // bigger shots at higher levels: +15% visual size per level (lvl1 = 1x, lvl5 = 1.6x)
+    const shotScale = 1 + (tower.level - 1) * 0.15;
     // shots leave the BARREL MUZZLE (offset along the aim), not the tower centre
     const aim = tower.aim ?? 0;
     const from = { x: center.x + Math.cos(aim) * 0.55, y: center.y + Math.sin(aim) * 0.55 };
@@ -117,6 +119,7 @@ export function fireTowers(
       type: tower.type,
       ttl: tower.type === "laser" ? 0.08 : 0.18,
       jitter: boltJitter(projId++),
+      scale: shotScale,
     });
 
     // cannon splash: everyone near the target takes the hit too
@@ -144,6 +147,7 @@ export function fireTowers(
           type: "tesla",
           ttl: 0.12,
           jitter: boltJitter(projId++),
+          scale: shotScale,
         });
         prev = e.pos;
       }

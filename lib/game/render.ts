@@ -1,6 +1,6 @@
 import type { Enemy, Projectile, Tower, TowerType, Vec2 } from "./types.ts";
 import { GRID_COLS, GRID_ROWS, WAYPOINTS, BASE_CELL, pathCells } from "./map.ts";
-import { TOWER_DEFS, towerStats } from "./towers.ts";
+import { TOWER_DEFS, towerStats, MAX_LEVEL } from "./towers.ts";
 import type { Particle } from "./particles.ts";
 import { getFlagImage } from "../flagImage.ts";
 import { hexA } from "./math.ts";
@@ -464,7 +464,8 @@ function drawTower(
 ) {
   const def = TOWER_DEFS[t.type];
   // level 1 is small; each upgrade makes the tower visibly bigger and beefier
-  const R = cell * (0.23 + t.level * 0.07); // lvl1 .30, lvl2 .37, lvl3 .44
+  // lvl1 .25, lvl2 .30, lvl3 .35, lvl4 .40, lvl5 .45 - a clear step every upgrade
+  const R = cell * (0.2 + t.level * 0.05);
   const c1 = palette[0] ?? "#64748b"; // the nation's main colour
 
   // ground shadow
@@ -473,14 +474,16 @@ function drawTower(
   ctx.ellipse(p.x, p.y + R * 0.72, R * 0.82, R * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // maxed (level 3) towers get a prestige aura in the nation's colour (like the base)
-  if (t.level >= 3) {
-    const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 1.7);
-    aura.addColorStop(0, hexA(c1, 0.55));
+  // only a fully maxed (level 5) tower earns the prestige glow in the nation's
+  // colour (like the base) - a pulsing halo that marks it as end-game hardware
+  if (t.level >= MAX_LEVEL) {
+    const pulse = 0.5 + 0.18 * Math.sin(time * 3 + t.id);
+    const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 1.9);
+    aura.addColorStop(0, hexA(c1, pulse));
     aura.addColorStop(1, hexA(c1, 0));
     ctx.fillStyle = aura;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, R * 1.7, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, R * 1.9, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -565,13 +568,13 @@ function drawTower(
   ctx.textBaseline = "middle";
   ctx.fillText(def.icon, p.x, p.y + 1);
 
-  // level shown as small gold stars on the lower hull (kept inside the tower)
-  for (let i = 0; i < t.level; i++) {
-    star(ctx, p.x - (t.level - 1) * R * 0.13 + i * R * 0.26, p.y + R * 0.72, R * 0.085, "#fbbf24");
+  // The tower earns a waving national flag from level 3 up, growing each level:
+  // small at lvl3, medium at lvl4, biggest at lvl5. (Level is read off the star
+  // pips in the upgrade panel, so no need to stamp it on the tower itself.)
+  if (t.level >= 3) {
+    const flagScale = t.level === 3 ? 0.72 : t.level === 4 ? 1 : 1.3;
+    towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
   }
-
-  // only a maxed (level 3) tower earns a waving national flag
-  if (t.level >= 3) towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id);
 }
 
 // A realistic waving flag on a pole. The flag is sliced into VERTICAL columns
@@ -587,8 +590,9 @@ function towerFlag(
   R: number,
   time: number,
   phase: number,
+  scale = 1,
 ) {
-  const poleTop = baseY - R * 1.5;
+  const poleTop = baseY - R * (1.2 + 0.4 * scale);
   // pole
   ctx.strokeStyle = "#d1d5db";
   ctx.lineWidth = Math.max(1.4, R * 0.05);
@@ -602,8 +606,8 @@ function towerFlag(
   ctx.fill();
 
   const img = getFlagImage(code);
-  const w = R * 0.84; // 20% shorter than before
-  const h = R * 0.62;
+  const w = R * 0.84 * scale; // grows with level: small (l3) -> biggest (l5)
+  const h = R * 0.62 * scale;
   const fx = baseX + ctx.lineWidth * 0.5;
   const fy = poleTop + R * 0.02;
   if (!img) {
@@ -732,25 +736,6 @@ function lightning(
   ctx.stroke();
 }
 
-// A filled 5-point star with a dark outline.
-function star(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const ang = -Math.PI / 2 + (i * Math.PI) / 5;
-    const rad = i % 2 === 0 ? r : r * 0.45;
-    const x = cx + Math.cos(ang) * rad;
-    const y = cy + Math.sin(ang) * rad;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(0,0,0,0.6)";
-  ctx.stroke();
-}
-
 // Per-weapon projectile styles so a battle looks varied, not "all lasers".
 function drawShot(
   ctx: CanvasRenderingContext2D,
@@ -760,36 +745,40 @@ function drawShot(
   b: Vec2,
 ) {
   const color = TOWER_DEFS[pr.type].color;
+  // shots grow with the firing tower's level (pr.scale): a lvl5 volley reads as
+  // visibly heavier ordnance than a lvl1 one. Line widths scale a touch gentler.
+  const s = cell * pr.scale;
+  const lw = cell * (1 + (pr.scale - 1) * 0.7);
   switch (pr.type) {
     case "laser": {
       // fat glowing beam
       ctx.strokeStyle = "rgba(34,211,238,0.35)";
-      ctx.lineWidth = cell * 0.16;
+      ctx.lineWidth = lw * 0.16;
       line(ctx, a, b);
       ctx.strokeStyle = "#a5f3fc";
-      ctx.lineWidth = cell * 0.06;
+      ctx.lineWidth = lw * 0.06;
       line(ctx, a, b);
       break;
     }
     case "rapid": {
       // a little bullet with a short tracer
       ctx.strokeStyle = "rgba(244,114,182,0.5)";
-      ctx.lineWidth = cell * 0.05;
+      ctx.lineWidth = lw * 0.05;
       const mid = { x: b.x + (a.x - b.x) * 0.3, y: b.y + (a.y - b.y) * 0.3 };
       line(ctx, mid, b);
       ctx.fillStyle = "#fce7f3";
       ctx.beginPath();
-      ctx.arc(b.x, b.y, cell * 0.06, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, s * 0.06, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "sniper": {
       // thin precise tracer + muzzle spark + hit flash
       ctx.strokeStyle = "rgba(167,139,250,0.9)";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * pr.scale;
       line(ctx, a, b);
-      spark(ctx, a, cell * 0.12, "#c4b5fd");
-      spark(ctx, b, cell * 0.14, "#ffffff");
+      spark(ctx, a, s * 0.12, "#c4b5fd");
+      spark(ctx, b, s * 0.14, "#ffffff");
       break;
     }
     case "cannon": {
@@ -797,30 +786,30 @@ function drawShot(
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       ctx.fillStyle = "#1f2937";
       ctx.beginPath();
-      ctx.arc(m.x, m.y, cell * 0.1, 0, Math.PI * 2);
+      ctx.arc(m.x, m.y, s * 0.1, 0, Math.PI * 2);
       ctx.fill();
-      const g = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, cell * 0.34);
+      const g = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, s * 0.34);
       g.addColorStop(0, "rgba(255,220,120,0.9)");
       g.addColorStop(0.5, "rgba(249,115,22,0.6)");
       g.addColorStop(1, "rgba(249,115,22,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, cell * 0.34, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, s * 0.34, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "frost": {
       // icy shard + a little snowflake burst at the target
       ctx.strokeStyle = "rgba(191,219,254,0.7)";
-      ctx.lineWidth = cell * 0.05;
+      ctx.lineWidth = lw * 0.05;
       line(ctx, a, b);
       ctx.strokeStyle = "#dbeafe";
       ctx.lineWidth = 1.5;
       for (let k = 0; k < 3; k++) {
         const ang = (k / 3) * Math.PI;
         ctx.beginPath();
-        ctx.moveTo(b.x - Math.cos(ang) * cell * 0.12, b.y - Math.sin(ang) * cell * 0.12);
-        ctx.lineTo(b.x + Math.cos(ang) * cell * 0.12, b.y + Math.sin(ang) * cell * 0.12);
+        ctx.moveTo(b.x - Math.cos(ang) * s * 0.12, b.y - Math.sin(ang) * s * 0.12);
+        ctx.lineTo(b.x + Math.cos(ang) * s * 0.12, b.y + Math.sin(ang) * s * 0.12);
         ctx.stroke();
       }
       break;
@@ -828,7 +817,7 @@ function drawShot(
     case "tesla": {
       // jagged lightning bolt
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * pr.scale;
       const mx = (a.x + b.x) / 2 + pr.jitter * cell;
       const my = (a.y + b.y) / 2 - pr.jitter * cell;
       ctx.beginPath();
@@ -841,14 +830,14 @@ function drawShot(
     case "slime": {
       // gooey green glob with a sticky trail
       ctx.strokeStyle = "rgba(132,204,22,0.5)";
-      ctx.lineWidth = cell * 0.14;
+      ctx.lineWidth = lw * 0.14;
       line(ctx, a, b);
-      const g = ctx.createRadialGradient(b.x - cell * 0.05, b.y - cell * 0.05, 1, b.x, b.y, cell * 0.2);
+      const g = ctx.createRadialGradient(b.x - s * 0.05, b.y - s * 0.05, 1, b.x, b.y, s * 0.2);
       g.addColorStop(0, "#bef264");
       g.addColorStop(1, "#4d7c0f");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, cell * 0.18, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, s * 0.18, 0, Math.PI * 2);
       ctx.fill();
       break;
     }

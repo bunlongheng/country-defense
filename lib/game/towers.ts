@@ -1,7 +1,7 @@
 import type { Enemy, Tower, TowerType, Vec2 } from "./types.ts";
 import { dist } from "./math.ts";
 
-export const MAX_LEVEL = 3;
+export const MAX_LEVEL = 5;
 
 export interface TowerDef {
   type: TowerType;
@@ -131,7 +131,7 @@ export const TOWER_ORDER: TowerType[] = [
   "sniper",
 ];
 
-// There are only 6 types x 3 levels = 18 possible stat blocks, and towerStats is
+// There are only 7 types x 5 levels = 35 possible stat blocks, and towerStats is
 // called several times per tower per frame, so memoize into a small lookup built
 // lazily once instead of allocating a fresh spread object on every call.
 const STATS_CACHE = new Map<string, TowerDef>();
@@ -152,9 +152,9 @@ export function towerStats(type: TowerType, level: number): TowerDef {
   const dmgMul = 1 + 0.38 * (lv - 1);
   const rangeMul = 1 + 0.14 * (lv - 1);
   const rateMul = 1 + 0.1 * (lv - 1);
-  // the sniper has a fixed per-level cadence: 1 shot every 3s / 2s / 1.5s
-  // (kept slow so a maxed sniper is strong but not overpowered)
-  const SNIPER_RATE = [1 / 3, 1 / 2, 1 / 1.5];
+  // the sniper has a fixed per-level cadence, tightening 3s -> 1.5s across the 5
+  // levels (kept slow so even a maxed sniper is a hard hitter, not a machine gun)
+  const SNIPER_RATE = [1 / 3, 1 / 2.6, 1 / 2.2, 1 / 1.8, 1 / 1.5];
   const fireRate =
     type === "sniper"
       ? SNIPER_RATE[lv - 1]

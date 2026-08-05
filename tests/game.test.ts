@@ -283,7 +283,7 @@ test("resetting id counters makes a replay start enemy/projectile ids at 1", () 
 
 test("projectiles expire once their ttl runs out", () => {
   const live = ageProjectiles(
-    [{ id: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, targetId: 1, type: "laser", ttl: 0.1, jitter: 0 }],
+    [{ id: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, targetId: 1, type: "laser", ttl: 0.1, jitter: 0, scale: 1 }],
     0.2,
   );
   assert.equal(live.length, 0);

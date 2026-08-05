@@ -49,4 +49,5 @@ export interface Projectile {
   type: TowerType;
   ttl: number; // seconds of visible life
   jitter: number; // deterministic bolt-offset seed for tesla arcs (-0.3..0.3)
+  scale: number; // visual size multiplier from the firing tower's level (1 = lvl1)
 }

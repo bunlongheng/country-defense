@@ -29,8 +29,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "◉",
     cost: 40,
     range: 2.6,
-    damage: 7,
-    fireRate: 3.2, // tuned down from 5 so the cheapest tower isn't OP
+    damage: 6,
+    fireRate: 2.7, // cheapest tower: modest damage, moderate cadence
     splash: 0,
     slow: 0,
     chain: 0,
@@ -43,8 +43,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "●",
     cost: 70,
     range: 2.4,
-    damage: 26,
-    fireRate: 0.9,
+    damage: 22,
+    fireRate: 0.8,
     splash: 1.3,
     slow: 0,
     chain: 0,
@@ -71,7 +71,7 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "⌖",
     cost: 90,
     range: 6,
-    damage: 55,
+    damage: 46,
     fireRate: 0.33, // ~1 shot every 3s - a slow, hard-hitting sniper
     splash: 0,
     slow: 0,
@@ -85,8 +85,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "✦",
     cost: 60,
     range: 2,
-    damage: 4, // least damage per shot on purpose - it fires so fast it'd be OP otherwise
-    fireRate: 4.5, // still the fastest gun, just low per-shot so ~18 dps, not overpowered
+    damage: 3, // least damage per shot on purpose - it fires so fast it'd be OP otherwise
+    fireRate: 4, // still the fastest gun, just low per-shot so ~12 dps, not overpowered
     splash: 0,
     slow: 0,
     chain: 0,
@@ -99,8 +99,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "⚡",
     cost: 100,
     range: 2.8,
-    damage: 18,
-    fireRate: 1.4,
+    damage: 15,
+    fireRate: 1.2,
     splash: 0,
     slow: 0,
     chain: 3,
@@ -137,9 +137,9 @@ export const TOWER_ORDER: TowerType[] = [
 const STATS_CACHE = new Map<string, TowerDef>();
 
 /**
- * Per-level stat multiplier: +45% damage and +12% range per level above 1.
- * Fire rate only creeps up +8%/level so upgrades stay powerful through damage,
- * not by turning towers into unstoppable machine guns.
+ * Per-level stat multiplier: +38% damage and +14% range per level above 1.
+ * Fire rate creeps up only +10%/level so a maxed tower is stronger but never an
+ * unstoppable machine gun - upgrades stay meaningful without trivializing waves.
  */
 export function towerStats(type: TowerType, level: number): TowerDef {
   const lv = Math.max(1, Math.min(MAX_LEVEL, level));
@@ -148,10 +148,10 @@ export function towerStats(type: TowerType, level: number): TowerDef {
   if (cached) return cached;
 
   const base = TOWER_DEFS[type];
-  // every level: +45% damage, +14% range, +15% fire rate (all three grow)
-  const dmgMul = 1 + 0.45 * (lv - 1);
+  // every level: +38% damage, +14% range, +10% fire rate (all three grow)
+  const dmgMul = 1 + 0.38 * (lv - 1);
   const rangeMul = 1 + 0.14 * (lv - 1);
-  const rateMul = 1 + 0.15 * (lv - 1);
+  const rateMul = 1 + 0.1 * (lv - 1);
   // the sniper has a fixed per-level cadence: 1 shot every 3s / 2s / 1.5s
   // (kept slow so a maxed sniper is strong but not overpowered)
   const SNIPER_RATE = [1 / 3, 1 / 2, 1 / 1.5];

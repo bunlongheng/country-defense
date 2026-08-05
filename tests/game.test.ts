@@ -218,6 +218,29 @@ test("frost slow expires after its duration - enemy resumes full speed", () => {
   assert.equal(expired.dist, normal.dist, "expired slow no longer reduces speed");
 });
 
+test("frost can't perpetually re-freeze - immunity keeps a wave from deadlocking", () => {
+  // A frost tower does 0 damage. Without a freeze-immunity window, stacked frost
+  // holds the last enemy frozen forever: it never dies, never leaks, and the wave
+  // (and the whole run) soft-locks. This proves re-hits during immunity can't
+  // extend the freeze, so the enemy always thaws and moves on.
+  const frost: Tower = { id: 1, type: "frost", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const e = mkEnemy(2, { x: 5, y: 5 }, 3, 9999); // huge hp, frost never kills it
+
+  fireTowers([frost], [e], 0.016, 0); // t=0: first hit freezes solid
+  const firstFreeze = e.frozenUntil;
+  assert.ok(firstFreeze && firstFreeze > 0, "frozen on the first frost hit");
+
+  frost.cooldown = 0;
+  fireTowers([frost], [e], 0.016, 1); // t=1: re-hit while still immune
+  assert.equal(e.frozenUntil, firstFreeze, "a re-hit during immunity does NOT extend the freeze");
+
+  // once the freeze lapses the enemy moves again - the wave can end
+  const thawed = mkEnemy(3, { x: 5, y: 5 }, 0, 9999);
+  thawed.frozenUntil = firstFreeze; // frozen only until firstFreeze
+  moveEnemies([thawed], 1, firstFreeze! + 1);
+  assert.ok(thawed.dist > 0, "enemy resumes moving after the freeze expires (no deadlock)");
+});
+
 test("splash and chain apply their exact damage factors", () => {
   const cannon: Tower = { id: 1, type: "cannon", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
   const dmg = towerStats("cannon", 1).damage;

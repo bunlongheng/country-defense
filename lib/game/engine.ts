@@ -14,13 +14,24 @@ import {
 
 export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
 export const FREEZE_DURATION = 3; // frost freezes an enemy solid for 3s
+export const FREEZE_IMMUNE = 2.5; // after a thaw, frost can't re-freeze for this long
 export const SLIME_SLOW_DURATION = 5; // slime's slow lingers for 5s
 const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 
 // Stamp the per-tower status effect (electric arc / freeze) onto a hit enemy.
+// Frost freezes an enemy solid, then grants a freeze-immunity window so it CAN'T
+// be perpetually re-frozen. Without this, stacked frost towers hold a 0-damage
+// enemy in place forever - if no damage tower can reach it, the wave deadlocks
+// (it never dies, never leaks) and the run soft-locks. During immunity frost
+// still applies its slow, so the enemy always creeps forward and the wave ends.
 function markEffect(enemy: Enemy, type: string, time: number) {
   if (type === "tesla") enemy.shockUntil = time + SHOCK_DURATION;
-  else if (type === "frost") enemy.frozenUntil = time + FREEZE_DURATION;
+  else if (type === "frost") {
+    if (time >= (enemy.freezeImmuneUntil ?? 0)) {
+      enemy.frozenUntil = time + FREEZE_DURATION;
+      enemy.freezeImmuneUntil = enemy.frozenUntil + FREEZE_IMMUNE;
+    }
+  }
 }
 
 export interface MoveResult {

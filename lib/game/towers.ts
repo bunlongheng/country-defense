@@ -119,6 +119,20 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     slow: 0.6, // stickiest slow in the game
     chain: 0,
   },
+  bomber: {
+    type: "bomber",
+    name: "Bomb Thrower",
+    blurb: "Lobs a bomb that ends any country, no matter its health",
+    color: "#1f2937", // a black tank
+    icon: "💣",
+    cost: 130, // pricey: an instant kill on a slow fuse
+    range: 3,
+    damage: 99999, // one bomb ends whoever it lands on, ignoring the health bar
+    fireRate: 0.2, // one bomb every 5s at lvl1 (tightens with upgrades, see towerStats)
+    splash: 0, // it targets one country; the blast radius is handled on landing
+    slow: 0,
+    chain: 0,
+  },
 };
 
 export const TOWER_ORDER: TowerType[] = [
@@ -129,6 +143,7 @@ export const TOWER_ORDER: TowerType[] = [
   "cannon",
   "tesla",
   "sniper",
+  "bomber",
 ];
 
 // There are only 7 types x 5 levels = 35 possible stat blocks, and towerStats is
@@ -155,10 +170,15 @@ export function towerStats(type: TowerType, level: number): TowerDef {
   // the sniper has a fixed per-level cadence, tightening 3s -> 1.5s across the 5
   // levels (kept slow so even a maxed sniper is a hard hitter, not a machine gun)
   const SNIPER_RATE = [1 / 3, 1 / 2.6, 1 / 2.2, 1 / 1.8, 1 / 1.5];
+  // the bomb thrower reloads slowly: one instant-kill bomb every 5s, shaving ~1s
+  // per upgrade down to every 2s (never faster - an instant kill must stay rare)
+  const BOMBER_RATE = [1 / 5, 1 / 4, 1 / 3, 1 / 2.5, 1 / 2];
   const fireRate =
     type === "sniper"
       ? SNIPER_RATE[lv - 1]
-      : +(base.fireRate * rateMul).toFixed(2);
+      : type === "bomber"
+        ? BOMBER_RATE[lv - 1]
+        : +(base.fireRate * rateMul).toFixed(2);
   const stats: TowerDef = {
     ...base,
     damage: Math.round(base.damage * dmgMul),

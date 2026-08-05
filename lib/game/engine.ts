@@ -12,6 +12,8 @@ import {
 // loop and simply calls these each frame; keeping them free of DOM/time-of-day
 // side effects makes the whole game unit-testable.
 
+export const BOMB_LOB = 0.6; // seconds a thrown bomb spends arcing to its target
+export const BOMB_RADIUS = 0.85; // tiles wiped when a bomb lands (mostly its target)
 export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
 export const FREEZE_DURATION = 3; // frost freezes an enemy solid for 3s
 export const FREEZE_IMMUNE = 2.5; // after a thaw, frost can't re-freeze for this long
@@ -108,6 +110,24 @@ export function fireTowers(
     const aim = tower.aim ?? 0;
     const from = { x: center.x + Math.cos(aim) * 0.55, y: center.y + Math.sin(aim) * 0.55 };
 
+    // bomb thrower: lob an arcing bomb instead of a hitscan shot. It carries no
+    // instant damage - the game loop homes it onto the target and detonates it on
+    // landing, ending that country regardless of its health.
+    if (tower.type === "bomber") {
+      projectiles.push({
+        id: projId,
+        from,
+        to: { ...target.pos },
+        targetId: target.id,
+        type: "bomber",
+        ttl: BOMB_LOB,
+        jitter: boltJitter(projId++),
+        scale: shotScale,
+        detonate: true,
+      });
+      continue;
+    }
+
     // primary hit
     applyHit(target, stats.damage, stats.slow, time, slowDur);
     markEffect(target, tower.type, time);
@@ -174,6 +194,34 @@ function applyHit(
     enemy.slowMul = 1 - slow;
     enemy.slowUntil = time + slowDur;
   }
+}
+
+export interface Boom {
+  x: number;
+  y: number;
+}
+
+/**
+ * Advance in-flight bombs: home each onto its (moving) target so the lob always
+ * lands on the country it was thrown at, and when the fuse runs out this frame,
+ * detonate - wiping every enemy within BOMB_RADIUS regardless of health. Returns
+ * the detonation points so the caller can draw the blast and play the boom.
+ */
+export function stepBombs(projectiles: Projectile[], enemies: Enemy[], dt: number): Boom[] {
+  const booms: Boom[] = [];
+  for (const p of projectiles) {
+    if (p.type !== "bomber" || !p.detonate) continue;
+    const tgt = enemies.find((e) => e.id === p.targetId && e.hp > 0);
+    if (tgt) p.to = { ...tgt.pos }; // track the fleeing country
+    if (p.ttl - dt <= 0) {
+      p.detonate = false;
+      for (const e of enemies) {
+        if (e.hp > 0 && dist(p.to, e.pos) <= BOMB_RADIUS) e.hp = 0;
+      }
+      booms.push({ x: p.to.x, y: p.to.y });
+    }
+  }
+  return booms;
 }
 
 export interface ReapResult {

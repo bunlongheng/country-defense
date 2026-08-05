@@ -104,7 +104,19 @@ const SHOOT: Record<TowerType, () => void> = {
   },
   tesla: () => blip(320, 0.12, "sawtooth", 0.5, 1600),
   sniper: () => blip(700, 0.2, "triangle", 0.6, 180),
+  // a heavy underhand lob: a short rising "whoomp" as the bomb leaves the tube
+  bomber: () => {
+    blip(120, 0.22, "sine", 0.6, 320);
+    noise(0.1, 0.14, 500);
+  },
 };
+
+/** A meaty explosion - used when a lobbed bomb lands and for the nuke blast. */
+export function playBoom(big = false) {
+  noise(big ? 0.6 : 0.32, big ? 0.6 : 0.4, big ? 90 : 160);
+  blip(big ? 70 : 110, big ? 0.5 : 0.3, "square", big ? 0.6 : 0.45, 40);
+  if (big) blip(150, 0.7, "sawtooth", 0.35, 30);
+}
 
 // Throttle firing sounds globally so a wall of rapid towers stays crisp, not a
 // wash of overlapping blips. Time is passed in from the game loop.

@@ -23,6 +23,7 @@ import {
 import {
   moveEnemies,
   fireTowers,
+  stepBombs,
   reapDead,
   ageProjectiles,
   resetProjectileIds,
@@ -114,14 +115,16 @@ test("waveAssignments splits the pool evenly, remainder in the last wave", () =>
 
 // ---- towers --------------------------------------------------------------
 
-test("there are 7 distinct tower types incl. laser, sniper and slime", () => {
-  assert.equal(TOWER_ORDER.length, 7);
-  assert.equal(new Set(TOWER_ORDER).size, 7);
+test("there are 8 distinct tower types incl. laser, sniper, slime and bomber", () => {
+  assert.equal(TOWER_ORDER.length, 8);
+  assert.equal(new Set(TOWER_ORDER).size, 8);
   assert.ok(TOWER_DEFS.laser, "laser exists");
   assert.ok(TOWER_DEFS.sniper.range > TOWER_DEFS.rapid.range, "sniper out-ranges rapid");
   // the slime tower slows hard and splatters (its defining role)
   assert.ok(TOWER_DEFS.slime.slow > 0, "slime slows");
   assert.ok(TOWER_DEFS.slime.splash > 0, "slime splatters");
+  // the bomb thrower one-shots anything (damage far exceeds any real HP)
+  assert.ok(TOWER_DEFS.bomber.damage > 9000, "bomber ignores the health bar");
 });
 
 test("upgrading a tower raises damage and range, capped at MAX_LEVEL", () => {
@@ -239,6 +242,22 @@ test("frost can't perpetually re-freeze - immunity keeps a wave from deadlocking
   thawed.frozenUntil = firstFreeze; // frozen only until firstFreeze
   moveEnemies([thawed], 1, firstFreeze! + 1);
   assert.ok(thawed.dist > 0, "enemy resumes moving after the freeze expires (no deadlock)");
+});
+
+test("bomb thrower lobs a bomb that detonates and one-shots a full-HP enemy", () => {
+  const bomber: Tower = { id: 1, type: "bomber", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const foe = mkEnemy(2, { x: 5, y: 5 }, 6, 5000); // huge HP - the bomb ignores it
+  const res = fireTowers([bomber], [foe], 0.016, 0);
+  const bomb = res.projectiles.find((p) => p.type === "bomber");
+  assert.ok(bomb && bomb.detonate, "a live bomb was lobbed");
+  assert.equal(foe.hp, 5000, "no instant hitscan damage - the bomb kills on landing");
+  // fuse still burning: no detonation yet
+  assert.equal(stepBombs(res.projectiles, [foe], 0.1).length, 0, "bomb still in the air");
+  // fast-forward the fuse to landing -> detonation wipes the target
+  bomb.ttl = 0.01;
+  const booms = stepBombs(res.projectiles, [foe], 0.05);
+  assert.equal(booms.length, 1, "the bomb detonated");
+  assert.ok(foe.hp <= 0, "the target is dead regardless of its health bar");
 });
 
 test("splash and chain apply their exact damage factors", () => {

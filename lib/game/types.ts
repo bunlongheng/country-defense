@@ -13,7 +13,8 @@ export type TowerType =
   | "sniper"
   | "rapid"
   | "tesla"
-  | "slime";
+  | "slime"
+  | "bomber";
 
 export interface Enemy {
   id: number;
@@ -50,4 +51,5 @@ export interface Projectile {
   ttl: number; // seconds of visible life
   jitter: number; // deterministic bolt-offset seed for tesla arcs (-0.3..0.3)
   scale: number; // visual size multiplier from the firing tower's level (1 = lvl1)
+  detonate?: boolean; // bomber lob: still live, kills its target on landing
 }

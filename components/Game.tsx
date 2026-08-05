@@ -27,6 +27,7 @@ import {
   playCountdown,
   playWin,
   playLose,
+  playBoom,
 } from "@/lib/game/audio";
 import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
@@ -56,6 +57,7 @@ import {
 import {
   moveEnemies,
   fireTowers,
+  stepBombs,
   reapDead,
   ageProjectiles,
   resetProjectileIds,
@@ -75,13 +77,13 @@ const PATH_LEN = pathLength();
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
 const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
-// Radial build menu: the 7 towers sit on a ring around the tapped tile, forming
+// Radial build menu: the 8 towers sit on a ring around the tapped tile, forming
 // a donut with the placement spot open in the middle (tap outside or Esc to
 // close). MENU_STEP is the ring radius; MENU_AROUND holds unit-circle offsets,
 // clockwise from the top.
 const MENU_STEP = 82;
-const MENU_AROUND: [number, number][] = Array.from({ length: 7 }, (_, i) => {
-  const a = -Math.PI / 2 + (i * Math.PI * 2) / 7;
+const MENU_AROUND: [number, number][] = Array.from({ length: 8 }, (_, i) => {
+  const a = -Math.PI / 2 + (i * Math.PI * 2) / 8;
   return [Math.cos(a), Math.sin(a)];
 });
 
@@ -296,6 +298,13 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         projectiles.current.push(...fired.projectiles);
         playShoot(fired.projectiles[0].type, time.current);
         playImpact(time.current);
+      }
+      // lobbed bombs: home onto their target and detonate on landing
+      const booms = stepBombs(projectiles.current, enemies.current, dt);
+      for (const bm of booms) {
+        spawnExplosion(particlesRef.current, bm.x, bm.y, "#f97316");
+        spawnExplosion(particlesRef.current, bm.x, bm.y, "#fde047");
+        playBoom();
       }
       // death puffs: capture everything about to be reaped for the explosions
       const killed = enemies.current.filter((e) => e.hp <= 0);

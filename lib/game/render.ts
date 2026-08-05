@@ -857,6 +857,47 @@ function drawShot(
       ctx.stroke();
       break;
     }
+    case "bomber": {
+      // a black bomb lobbed in an arc with a lit, sparking fuse (Ziggs-style)
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.6)); // 0.6 = BOMB_LOB
+      const x = a.x + (b.x - a.x) * prog;
+      const y = a.y + (b.y - a.y) * prog - Math.sin(prog * Math.PI) * cell * 1.1;
+      const br = cell * 0.17 * pr.scale;
+      // bomb body (near-black sphere with a soft highlight)
+      const bg = ctx.createRadialGradient(x - br * 0.35, y - br * 0.35, 1, x, y, br);
+      bg.addColorStop(0, "#3b3f4a");
+      bg.addColorStop(1, "#07080b");
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.arc(x, y, br, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath();
+      ctx.arc(x - br * 0.34, y - br * 0.34, br * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      // fuse stub
+      const fx = x + br * 0.55, fy = y - br * 1.55;
+      ctx.strokeStyle = "#6b7280";
+      ctx.lineWidth = Math.max(1, br * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(x, y - br);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      // sparking flame at the fuse tip
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const sp = br * (0.55 + Math.abs(pr.jitter) * 1.2);
+      const sg = ctx.createRadialGradient(fx, fy, 1, fx, fy, sp);
+      sg.addColorStop(0, "rgba(255,255,220,1)");
+      sg.addColorStop(0.5, "rgba(255,170,40,0.9)");
+      sg.addColorStop(1, "rgba(255,120,0,0)");
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.arc(fx, fy, sp, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
     case "slime": {
       // gooey green glob with a sticky trail
       ctx.strokeStyle = "rgba(132,204,22,0.5)";

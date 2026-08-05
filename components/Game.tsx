@@ -198,7 +198,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [difficulty, setDifficulty] = useState<Difficulty>("Normal");
   const difficultyRef = useRef<Difficulty>("Normal");
   const [showSettings, setShowSettings] = useState(false);
-  const [padConnected, setPadConnected] = useState(false); // a gamepad is plugged in
   // honeycomb build menu: opened by tapping an empty buildable tile
   const [menu, setMenu] = useState<{
     col: number;
@@ -889,14 +888,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("getGamepads" in navigator)) return;
-    const onConn = () => {
-      setPadConnected(true);
-      flash("🎮 Controller ready");
-    };
-    const onDisc = () => setPadConnected(!!navigator.getGamepads?.().some(Boolean));
-    window.addEventListener("gamepadconnected", onConn);
-    window.addEventListener("gamepaddisconnected", onDisc);
-
+    // No connect banner/badge by design - the pad just works silently, nothing
+    // is ever overlaid on the UI. Polling getGamepads picks up the controller.
     let raf = 0;
     const prev: boolean[] = [];
     let moveCooldown = 0;
@@ -953,11 +946,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       raf = requestAnimationFrame(poll);
     };
     raf = requestAnimationFrame(poll);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("gamepadconnected", onConn);
-      window.removeEventListener("gamepaddisconnected", onDisc);
-    };
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   // clean up the hint timer on unmount
@@ -985,11 +974,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           S{stage + 1}/{TOTAL_STAGES}
           <span className="hidden font-bold text-white/55 sm:inline">· {STAGES[stage].name}</span>
         </span>
-        {padConnected && (
-          <span className="text-sm" title="Controller connected - move with the d-pad, A to place, B to cancel">
-            🎮
-          </span>
-        )}
         <span className="flex items-center gap-1.5 text-sm font-black text-cyan-400 sm:text-base" title="Wave">
           <Icon.Wave />
           {wave}/{TOTAL_WAVES}

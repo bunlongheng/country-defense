@@ -36,6 +36,7 @@ import {
   WAYPOINTS,
   BASE_CELL,
 } from "../lib/game/map.ts";
+import { STAGES, TOTAL_STAGES, stageBase } from "../lib/game/stages.ts";
 import { dist, hexA } from "../lib/game/math.ts";
 import type { Enemy, Tower } from "../lib/game/types.ts";
 
@@ -114,6 +115,24 @@ test("waveAssignments splits the pool evenly, remainder in the last wave", () =>
 });
 
 // ---- towers --------------------------------------------------------------
+
+test("the journey has 10 stages that ramp up and stay on-grid", () => {
+  assert.equal(TOTAL_STAGES, 10);
+  assert.equal(STAGES.length, 10);
+  let prevMul = 0;
+  for (const st of STAGES) {
+    assert.ok(st.waypoints.length >= 2, `${st.name} has a path`);
+    assert.ok(st.hpMul >= prevMul, `${st.name} is at least as tough as the last`);
+    prevMul = st.hpMul;
+    // path stays within the grid (entry may sit one tile off the left edge)
+    for (const wp of st.waypoints) {
+      assert.ok(wp.x >= -1 && wp.x <= 13, `${st.name} x in range`);
+      assert.ok(wp.y >= -1 && wp.y <= 8, `${st.name} y in range`);
+    }
+    const base = stageBase(st);
+    assert.deepEqual(base, st.waypoints[st.waypoints.length - 1], "base is the path end");
+  }
+});
 
 test("there are 8 distinct tower types incl. laser, sniper, slime and bomber", () => {
   assert.equal(TOWER_ORDER.length, 8);

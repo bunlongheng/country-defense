@@ -1,5 +1,5 @@
 import type { Country } from "../countries.ts";
-import type { Enemy } from "./types.ts";
+import type { Enemy, Vec2 } from "./types.ts";
 import { pointAtDistance } from "./map.ts";
 
 // Every country invades exactly ONCE across the whole game. The pool (all
@@ -97,8 +97,11 @@ export function spawnWave(
   spacing = 1.6,
   seed = 0,
   hpGrowth: number = DIFFICULTY.Normal,
+  waypoints?: Vec2[],
+  hpMul = 1, // per-stage toughness bump (+10% per stage in the journey)
 ): Enemy[] {
   const stats = waveStats(wave, hpGrowth);
+  const hp = Math.round(stats.hp * hpMul);
   const groups = waveAssignments(pool, seed);
   const w = Math.max(1, Math.min(TOTAL_WAVES, wave));
   const countries = groups[w - 1] ?? [];
@@ -110,14 +113,14 @@ export function spawnWave(
       id: nextId++,
       code: country.code,
       name: country.name,
-      maxHp: stats.hp,
-      hp: stats.hp,
+      maxHp: hp,
+      hp,
       speed: stats.speed,
       dist,
       reward: stats.reward,
       slowUntil: 0,
       slowMul: 1,
-      pos: pointAtDistance(Math.max(0, dist)),
+      pos: pointAtDistance(Math.max(0, dist), waypoints),
     });
   }
   return enemies;

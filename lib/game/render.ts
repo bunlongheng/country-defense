@@ -1,5 +1,6 @@
 import type { Enemy, Projectile, Tower, TowerType, Vec2 } from "./types.ts";
 import { GRID_COLS, GRID_ROWS, WAYPOINTS, BASE_CELL, pathCells } from "./map.ts";
+import type { Scenery } from "./stages.ts";
 import { TOWER_DEFS, towerStats, MAX_LEVEL } from "./towers.ts";
 import type { Particle } from "./particles.ts";
 import { getFlagImage } from "../flagImage.ts";
@@ -24,6 +25,12 @@ export interface DrawState {
   cursor?: { x: number; y: number } | null;
   preview?: { cell: Vec2; type: TowerType } | null; // ghost + range for the honeycomb pick
   nuke?: { x: number; y: number; radius: number; armed: boolean } | null; // targeting reticle
+  stageId?: number; // which stage's map + scenery to draw (1..10)
+  scenery?: Scenery; // ground/road/decor theme for the current stage
+  waypoints?: Vec2[]; // the current stage's path (defaults to stage 1)
+  pathSet?: Set<string>; // path + no-build tiles (drives the build-pad layout)
+  noBuild?: Set<string>; // extra blocked tiles (water / lava), drawn themed
+  baseCell?: Vec2; // where the home base sits (end of the path)
 }
 
 // One global sun direction so every dome, marble and mountain is lit the same way.
@@ -35,7 +42,7 @@ const toPx = (v: Vec2, cell: number): Vec2 => ({
 });
 
 const PATH = pathCells();
-const onPath = (c: number, r: number) => PATH.has(`${c},${r}`);
+const EMPTY_SET = new Set<string>();
 
 // ---- tiny color helpers ---------------------------------------------------
 function rgb(hex: string): [number, number, number] {
@@ -62,8 +69,30 @@ function hash(c: number, r: number, salt = 0): number {
 let bgCanvas: HTMLCanvasElement | null = null;
 let bgKey = "";
 
-function background(cell: number, code: string, palette: string[]): HTMLCanvasElement {
-  const key = `${cell}|${code}|${palette[0] ?? ""}`;
+interface StageDraw {
+  stageId: number;
+  scenery: Scenery;
+  waypoints: Vec2[];
+  pathSet: Set<string>;
+  noBuild: Set<string>;
+}
+
+// Forest is the fallback theme so the base map still renders if no stage is given.
+const FOREST: Scenery = {
+  ground: ["#1c2b16", "#0e1a0c"],
+  road: ["rgba(41,30,20,0.9)", "#5a4326", "#6f5330"],
+  accent: "#f9a8d4",
+  fleck: "#3a2a18",
+  decor: "forest",
+};
+
+function background(
+  cell: number,
+  code: string,
+  palette: string[],
+  st: StageDraw,
+): HTMLCanvasElement {
+  const key = `${cell}|${code}|${palette[0] ?? ""}|${st.stageId}`;
   if (bgCanvas && bgKey === key) return bgCanvas;
   const w = cell * GRID_COLS;
   const h = cell * GRID_ROWS;
@@ -71,32 +100,53 @@ function background(cell: number, code: string, palette: string[]): HTMLCanvasEl
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d")!;
-  const accent = palette[0] ?? "#3f6212";
+  const sc = st.scenery;
+  const accent = sc.accent;
+  const inPath = (c: number, r: number) => st.pathSet.has(`${c},${r}`);
+  const inWater = (c: number, r: number) => st.noBuild.has(`${c},${r}`);
 
-  // grassy terrain base, faintly tinted toward the nation's color
+  // themed ground base
   const ground = ctx.createLinearGradient(0, 0, 0, h);
-  ground.addColorStop(0, "#1c2b16");
-  ground.addColorStop(1, "#0e1a0c");
+  ground.addColorStop(0, sc.ground[0]);
+  ground.addColorStop(1, sc.ground[1]);
   ctx.fillStyle = ground;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = hexA(accent, 0.06);
-  ctx.fillRect(0, 0, w, h);
 
-  // soft grass mottling for texture
+  // soft mottling for texture (tinted to the ground)
   for (let i = 0; i < 90; i++) {
     const x = hash(i, 3, 1) * w;
     const y = hash(i, 7, 2) * h;
-    ctx.fillStyle = hexA(hash(i, 1, 5) > 0.5 ? "#2f4a1e" : "#16240f", 0.5);
+    ctx.fillStyle = hexA(hash(i, 1, 5) > 0.5 ? sc.ground[0] : sc.ground[1], 0.5);
     ctx.beginPath();
     ctx.arc(x, y, cell * (0.05 + hash(i, 9, 3) * 0.08), 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // build plots: a faint rounded pad on every buildable (non-path) tile so the
-  // player sees exactly where towers go. No grid at all over the road.
+  // no-build zones: water / lava the player can't build on (drawn as a tinted pool)
+  const water = sc.decor === "volcano" ? "#7a1e08" : "#1e6fa8";
+  const waterTop = sc.decor === "volcano" ? "#ff7a1a" : "#4fb0e0";
   for (let c = 0; c < GRID_COLS; c++) {
     for (let r = 0; r < GRID_ROWS; r++) {
-      if (onPath(c, r)) continue;
+      if (!inWater(c, r)) continue;
+      const g = ctx.createLinearGradient(0, r * cell, 0, r * cell + cell);
+      g.addColorStop(0, waterTop);
+      g.addColorStop(1, water);
+      ctx.fillStyle = g;
+      ctx.fillRect(c * cell, r * cell, cell + 1, cell + 1);
+      // ripple / glow lines
+      ctx.strokeStyle = hexA(sc.decor === "volcano" ? "#ffd27a" : "#bfe6ff", 0.4);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(c * cell + cell * 0.2, r * cell + cell * (0.35 + hash(c, r, 21) * 0.3));
+      ctx.lineTo(c * cell + cell * 0.8, r * cell + cell * (0.35 + hash(c, r, 22) * 0.3));
+      ctx.stroke();
+    }
+  }
+
+  // build plots: a faint rounded pad on every buildable tile (not path, not water)
+  for (let c = 0; c < GRID_COLS; c++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      if (inPath(c, r) || inWater(c, r)) continue;
       roundRect(ctx, c * cell + cell * 0.14, r * cell + cell * 0.14, cell * 0.72, cell * 0.72, cell * 0.14);
       ctx.fillStyle = "rgba(255,255,255,0.028)";
       ctx.fill();
@@ -106,23 +156,31 @@ function background(cell: number, code: string, palette: string[]): HTMLCanvasEl
     }
   }
 
-  // the road, rendered as a muddy dirt track (base blocks tower building)
+  // the road, themed per scenery (three stacked strokes: edge, mid, center)
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(41,30,20,0.9)";
+  ctx.strokeStyle = sc.road[0];
   ctx.lineWidth = cell * 0.9;
-  strokePath(ctx, cell);
-  ctx.strokeStyle = "#5a4326";
+  strokePath(ctx, cell, st.waypoints);
+  ctx.strokeStyle = sc.road[1];
   ctx.lineWidth = cell * 0.7;
-  strokePath(ctx, cell);
-  ctx.strokeStyle = "#6f5330";
+  strokePath(ctx, cell, st.waypoints);
+  ctx.strokeStyle = sc.road[2];
   ctx.lineWidth = cell * 0.5;
-  strokePath(ctx, cell);
-  // mud puddles / ruts along the track
-  mudFlecks(ctx, cell);
+  strokePath(ctx, cell, st.waypoints);
+  // little specks along the track
+  mudFlecks(ctx, cell, st.waypoints, sc.fleck);
 
-  // nature scattered on the terrain (drawn under towers/enemies each frame)
-  scenery(ctx, cell, accent);
+  // stadium pitch: paint mow-stripes across the field so it reads as a soccer turf
+  if (sc.decor === "stadium") {
+    for (let c = 0; c < GRID_COLS; c += 2) {
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(c * cell, 0, cell, h);
+    }
+  }
+
+  // signature props scattered on the terrain
+  scenery(ctx, cell, accent, inPath, inWater, sc.decor);
 
   bgCanvas = canvas;
   bgKey = key;
@@ -130,10 +188,10 @@ function background(cell: number, code: string, palette: string[]): HTMLCanvasEl
 }
 
 
-function mudFlecks(ctx: CanvasRenderingContext2D, cell: number) {
-  for (let i = 0; i < WAYPOINTS.length - 1; i++) {
-    const a = toPx(WAYPOINTS[i], cell);
-    const b = toPx(WAYPOINTS[i + 1], cell);
+function mudFlecks(ctx: CanvasRenderingContext2D, cell: number, waypoints: Vec2[], color: string) {
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = toPx(waypoints[i], cell);
+    const b = toPx(waypoints[i + 1], cell);
     const steps = 6;
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
@@ -141,29 +199,71 @@ function mudFlecks(ctx: CanvasRenderingContext2D, cell: number) {
       const y = a.y + (b.y - a.y) * t + (hash(i, s, 2) - 0.5) * cell * 0.4;
       ctx.beginPath();
       ctx.arc(x, y, cell * (0.05 + hash(i, s, 4) * 0.06), 0, Math.PI * 2);
-      ctx.fillStyle = hash(i, s, 6) > 0.5 ? "rgba(58,42,24,0.6)" : "rgba(120,92,52,0.4)";
+      ctx.fillStyle = hexA(color, hash(i, s, 6) > 0.5 ? 0.6 : 0.35);
       ctx.fill();
     }
   }
 }
 
-function scenery(ctx: CanvasRenderingContext2D, cell: number, accent: string) {
+function scenery(
+  ctx: CanvasRenderingContext2D,
+  cell: number,
+  accent: string,
+  inPath: (c: number, r: number) => boolean,
+  inWater: (c: number, r: number) => boolean,
+  decor: Scenery["decor"],
+) {
   for (let c = 0; c < GRID_COLS; c++) {
     for (let r = 0; r < GRID_ROWS; r++) {
-      if (onPath(c, r)) continue;
+      if (inPath(c, r) || inWater(c, r)) continue;
       const roll = hash(c, r, 11);
-      // keep interior building tiles mostly clear; decorate edges + gaps densely
       const edge = c === 0 || r === 0 || c === GRID_COLS - 1 || r === GRID_ROWS - 1;
       const chance = edge ? 0.7 : 0.32;
       if (roll > chance) continue;
       const cx = c * cell + cell * (0.2 + hash(c, r, 12) * 0.6);
       const cy = r * cell + cell * (0.2 + hash(c, r, 13) * 0.6);
       const kind = hash(c, r, 14);
-      if (kind < 0.5) tree(ctx, cx, cy, cell, hash(c, r, 15) > 0.5);
-      else if (kind < 0.72) rock(ctx, cx, cy, cell);
-      else if (kind < 0.88) bush(ctx, cx, cy, cell, accent);
-      else mud(ctx, cx, cy, cell);
+      prop(ctx, cx, cy, cell, decor, accent, kind, hash(c, r, 15));
     }
+  }
+}
+
+// One signature prop for the given scenery. Kept simple + colorful so each stage
+// reads distinctly at a glance without a huge art budget.
+function prop(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  decor: Scenery["decor"],
+  accent: string,
+  kind: number,
+  v: number,
+) {
+  switch (decor) {
+    case "desert":
+      return kind < 0.6 ? cactus(ctx, x, y, cell) : rock(ctx, x, y, cell, "#b98a4f");
+    case "beach":
+      return kind < 0.55 ? palm(ctx, x, y, cell) : rock(ctx, x, y, cell, "#c9b381");
+    case "savanna":
+      return kind < 0.55 ? acacia(ctx, x, y, cell) : bush(ctx, x, y, cell, accent, "#7c8a3a");
+    case "stadium":
+      return kind < 0.5 ? banner(ctx, x, y, cell, accent) : bush(ctx, x, y, cell, accent, "#2f7a30");
+    case "river":
+      return kind < 0.45 ? tree(ctx, x, y, cell, v > 0.5) : reed(ctx, x, y, cell);
+    case "ice":
+      return kind < 0.5 ? snowPine(ctx, x, y, cell) : rock(ctx, x, y, cell, "#cfe0ee");
+    case "canyon":
+      return mesa(ctx, x, y, cell);
+    case "tropical":
+      return kind < 0.6 ? palm(ctx, x, y, cell) : bush(ctx, x, y, cell, accent, "#1f6f3a");
+    case "volcano":
+      return kind < 0.5 ? lavaRock(ctx, x, y, cell) : rock(ctx, x, y, cell, "#4a2418");
+    default:
+      if (kind < 0.5) return tree(ctx, x, y, cell, v > 0.5);
+      if (kind < 0.72) return rock(ctx, x, y, cell, "#7b8087");
+      if (kind < 0.88) return bush(ctx, x, y, cell, accent, "#2f6a2c");
+      return mud(ctx, x, y, cell);
   }
 }
 
@@ -200,11 +300,11 @@ function tree(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number,
   }
 }
 
-function rock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+function rock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number, color = "#7b8087") {
   const s = cell * 0.2;
   const g = ctx.createLinearGradient(x - s, y - s, x + s, y + s);
-  g.addColorStop(0, "#8a8f96");
-  g.addColorStop(1, "#4b5157");
+  g.addColorStop(0, shade(color, 0.28));
+  g.addColorStop(1, shade(color, -0.35));
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.moveTo(x - s, y + s * 0.5);
@@ -215,9 +315,16 @@ function rock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number)
   ctx.fill();
 }
 
-function bush(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number, accent: string) {
+function bush(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  accent: string,
+  leaf = "#2f6a2c",
+) {
   const s = cell * 0.16;
-  ctx.fillStyle = "#2f6a2c";
+  ctx.fillStyle = leaf;
   for (let i = -1; i <= 1; i++) {
     ctx.beginPath();
     ctx.arc(x + i * s * 0.7, y, s * 0.7, 0, Math.PI * 2);
@@ -228,6 +335,137 @@ function bush(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number,
   ctx.beginPath();
   ctx.arc(x - s * 0.4, y - s * 0.3, s * 0.16, 0, Math.PI * 2);
   ctx.arc(x + s * 0.5, y, s * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ---- per-scenery signature props -----------------------------------------
+function cactus(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.22;
+  ctx.strokeStyle = "#2f7a3a";
+  ctx.lineWidth = s * 0.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.7);
+  ctx.lineTo(x, y - s);
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - s * 0.6, y);
+  ctx.lineTo(x - s * 0.6, y - s * 0.5);
+  ctx.moveTo(x, y - s * 0.3);
+  ctx.lineTo(x + s * 0.6, y - s * 0.3);
+  ctx.lineTo(x + s * 0.6, y - s * 0.8);
+  ctx.stroke();
+}
+
+function palm(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.22;
+  ctx.strokeStyle = "#8a5a2b";
+  ctx.lineWidth = s * 0.28;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.8);
+  ctx.quadraticCurveTo(x + s * 0.2, y - s * 0.2, x - s * 0.1, y - s);
+  ctx.stroke();
+  ctx.strokeStyle = "#2f9a46";
+  ctx.lineWidth = s * 0.16;
+  for (let k = 0; k < 5; k++) {
+    const a = -Math.PI / 2 + (k - 2) * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.1, y - s);
+    ctx.quadraticCurveTo(x - s * 0.1 + Math.cos(a) * s * 0.7, y - s + Math.sin(a) * s * 0.7, x - s * 0.1 + Math.cos(a) * s * 1.2, y - s * 0.75 + Math.sin(a) * s * 1.2);
+    ctx.stroke();
+  }
+}
+
+function acacia(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.2;
+  ctx.strokeStyle = "#6b4a2a";
+  ctx.lineWidth = s * 0.22;
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.8);
+  ctx.lineTo(x, y - s * 0.3);
+  ctx.stroke();
+  ctx.fillStyle = "#5c7a34";
+  ctx.beginPath();
+  ctx.ellipse(x, y - s * 0.5, s * 1.1, s * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function reed(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.2;
+  ctx.strokeStyle = "#4e8a3a";
+  ctx.lineWidth = s * 0.14;
+  ctx.lineCap = "round";
+  for (let k = -1; k <= 1; k++) {
+    ctx.beginPath();
+    ctx.moveTo(x + k * s * 0.35, y + s * 0.6);
+    ctx.quadraticCurveTo(x + k * s * 0.35 + k * s * 0.2, y - s * 0.2, x + k * s * 0.5, y - s * 0.8);
+    ctx.stroke();
+  }
+}
+
+function snowPine(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.21;
+  ctx.fillStyle = "#5b3d22";
+  ctx.fillRect(x - s * 0.1, y, s * 0.2, s * 0.7);
+  for (let i = 0; i < 3; i++) {
+    const yy = y - s * (0.1 + i * 0.5);
+    const ww = s * (1.05 - i * 0.28);
+    ctx.beginPath();
+    ctx.moveTo(x, yy - s * 0.7);
+    ctx.lineTo(x - ww, yy);
+    ctx.lineTo(x + ww, yy);
+    ctx.closePath();
+    ctx.fillStyle = i === 0 ? "#2e5a3b" : "#357a4a";
+    ctx.fill();
+    // snow cap
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.moveTo(x, yy - s * 0.7);
+    ctx.lineTo(x - ww * 0.5, yy - s * 0.35);
+    ctx.lineTo(x + ww * 0.5, yy - s * 0.35);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function mesa(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.24;
+  const layers = ["#c47a4a", "#a85a34", "#8a4526"];
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = layers[i];
+    const wy = y + s * 0.6 - i * s * 0.5;
+    const ww = s * (1 - i * 0.18);
+    ctx.fillRect(x - ww, wy - s * 0.5, ww * 2, s * 0.55);
+  }
+}
+
+function lavaRock(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) {
+  const s = cell * 0.2;
+  rock(ctx, x, y, cell, "#3a1f15");
+  // glowing cracks
+  ctx.strokeStyle = "rgba(255,120,20,0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.4, y - s * 0.3);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x + s * 0.3, y + s * 0.3);
+  ctx.stroke();
+}
+
+function banner(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number, accent: string) {
+  const s = cell * 0.22;
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = Math.max(1.2, s * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.7);
+  ctx.lineTo(x, y - s);
+  ctx.stroke();
+  ctx.fillStyle = accent === "#ffffff" ? "#ef4444" : accent;
+  ctx.beginPath();
+  ctx.moveTo(x, y - s);
+  ctx.lineTo(x + s * 0.9, y - s * 0.7);
+  ctx.lineTo(x, y - s * 0.4);
+  ctx.closePath();
   ctx.fill();
 }
 
@@ -246,7 +484,14 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   const w = cell * GRID_COLS;
   const h = cell * GRID_ROWS;
   ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(background(cell, s.code, s.palette), 0, 0);
+  const st: StageDraw = {
+    stageId: s.stageId ?? 1,
+    scenery: s.scenery ?? FOREST,
+    waypoints: s.waypoints ?? WAYPOINTS,
+    pathSet: s.pathSet ?? PATH,
+    noBuild: s.noBuild ?? EMPTY_SET,
+  };
+  ctx.drawImage(background(cell, s.code, s.palette, st), 0, 0);
 
   // keyboard build cursor (only shown during keyboard play)
   if (s.cursor) {
@@ -318,7 +563,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // home base: a spinning flag sphere floating above a cool themed pedestal.
   // As it loses lives it reddens, then smokes, then catches fire.
-  drawBase(ctx, toPx(BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives, s.code);
+  drawBase(ctx, toPx(s.baseCell ?? BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives, s.code);
 
   // enemies
   for (const e of s.enemies) {
@@ -979,9 +1224,9 @@ function spark(ctx: CanvasRenderingContext2D, p: Vec2, r: number, color: string)
   ctx.fill();
 }
 
-function strokePath(ctx: CanvasRenderingContext2D, cell: number) {
+function strokePath(ctx: CanvasRenderingContext2D, cell: number, waypoints: Vec2[]) {
   ctx.beginPath();
-  WAYPOINTS.forEach((wp, i) => {
+  waypoints.forEach((wp, i) => {
     const p = toPx(wp, cell);
     if (i === 0) ctx.moveTo(p.x, p.y);
     else ctx.lineTo(p.x, p.y);

@@ -1,4 +1,4 @@
-import type { Enemy, Projectile, Tower } from "./types.ts";
+import type { Enemy, Projectile, Tower, Vec2 } from "./types.ts";
 import { dist } from "./math.ts";
 import { pathLength, pointAtDistance } from "./map.ts";
 import {
@@ -51,6 +51,7 @@ export function moveEnemies(
   dt: number,
   time: number,
   pathLen = pathLength(),
+  waypoints?: Vec2[],
 ): MoveResult {
   const survivors: Enemy[] = [];
   let leaked = 0;
@@ -63,7 +64,7 @@ export function moveEnemies(
       leaked++;
       continue;
     }
-    e.pos = pointAtDistance(Math.max(0, e.dist));
+    e.pos = pointAtDistance(Math.max(0, e.dist), waypoints);
     survivors.push(e);
   }
   return { survivors, leaked };

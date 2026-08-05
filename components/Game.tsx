@@ -34,7 +34,6 @@ import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
   GRID_COLS,
   GRID_ROWS,
-  BASE_CELL,
   pathCells,
   pathLength,
   isBuildable,
@@ -55,6 +54,7 @@ import {
   DIFFICULTY,
   type Difficulty,
 } from "@/lib/game/waves";
+import { STAGES, TOTAL_STAGES, stageBase } from "@/lib/game/stages";
 import {
   moveEnemies,
   fireTowers,
@@ -74,8 +74,46 @@ import {
 const START_GOLD = 200;
 const START_LIVES = 10;
 const NUKE_RADIUS = 3; // tiles wiped by the one-per-game nuke
-const BLOCKED = pathCells();
-const PATH_LEN = pathLength();
+
+// Deterministic confetti pieces (Math.sin hash so SSR/CSR agree, no random).
+const CONFETTI_COLORS = ["#f87171", "#fb923c", "#facc15", "#4ade80", "#38bdf8", "#a78bfa", "#f472b6"];
+const CONFETTI_GOLD = ["#fde047", "#facc15", "#f59e0b", "#fbbf24", "#fff7cc"];
+const CONFETTI_PIECES = Array.from({ length: 48 }, (_, i) => {
+  const r = (s: number) => {
+    const n = Math.sin(i * 12.9898 + s * 78.233) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  return {
+    left: r(1) * 100,
+    size: 5 + r(2) * 6,
+    dur: 2.4 + r(3) * 2.4,
+    delay: r(4) * 2.6,
+    color: CONFETTI_COLORS[Math.floor(r(5) * CONFETTI_COLORS.length)],
+    gold: CONFETTI_GOLD[Math.floor(r(6) * CONFETTI_GOLD.length)],
+  };
+});
+
+function Confetti({ gold }: { gold: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden rounded-2xl">
+      {CONFETTI_PIECES.map((p, i) => (
+        <span
+          key={i}
+          style={{
+            position: "absolute",
+            left: `${p.left}%`,
+            top: 0,
+            width: p.size,
+            height: p.size * 1.7,
+            borderRadius: 1,
+            background: gold ? p.gold : p.color,
+            animation: `confettiFall ${p.dur}s linear ${p.delay}s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
 const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
@@ -102,7 +140,7 @@ const Icon = {
   Gear: () => <Settings className={IC} />,
 };
 
-type Phase = "ready" | "wave" | "won" | "lost";
+type Phase = "ready" | "wave" | "stageclear" | "won" | "lost";
 
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
@@ -126,6 +164,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // live range/ghost preview drawn on the canvas while the honeycomb menu is open
   const previewRef = useRef<{ cell: { x: number; y: number }; type: TowerType } | null>(null);
   const particlesRef = useRef<Particle[]>([]); // smoke + sparks + embers
+  // stage journey: which of the 10 maps we're on + its derived path / blocked cells
+  const stageRef = useRef(0); // 0-based index into STAGES
+  const waypointsRef = useRef(STAGES[0].waypoints);
+  const pathCellsRef = useRef<Set<string>>(pathCells(STAGES[0].waypoints)); // road tiles
+  const noBuildRef = useRef<Set<string>>(new Set(STAGES[0].noBuild)); // water / lava
+  const blockedRef = useRef<Set<string>>(new Set(pathCells(STAGES[0].waypoints))); // road + noBuild
+  const pathLenRef = useRef(pathLength(STAGES[0].waypoints));
+  const baseRef = useRef(stageBase(STAGES[0]));
+  const hpMulRef = useRef(STAGES[0].hpMul);
+  const [stage, setStage] = useState(0);
+  const [confetti, setConfetti] = useState<"none" | "regular" | "gold">("none");
   // nuke: one strike per game. armed = picking a spot; target/count drive the reticle + countdown.
   const nukeArmedRef = useRef(false);
   const nukeTargetRef = useRef<{ x: number; y: number } | null>(null);
@@ -227,7 +276,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const startWave = useCallback(() => {
     if (phaseRef.current !== "ready") return;
     const w = waveRef.current;
-    const fresh = spawnWave(w, pool.current, 1.6, seedRef.current, DIFFICULTY[difficultyRef.current]);
+    const fresh = spawnWave(
+      w,
+      pool.current,
+      1.6,
+      seedRef.current,
+      DIFFICULTY[difficultyRef.current],
+      waypointsRef.current,
+      hpMulRef.current,
+    );
     fresh.forEach((e) => loadFlagImage(e.code).catch(() => {}));
     enemies.current = fresh;
     countdownEndRef.current = null;
@@ -237,7 +294,24 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setPhase("wave");
   }, []);
 
-  const resetGame = useCallback(() => {
+  // Point the game at a stage: derive its path, blocked cells, base and toughness.
+  const applyStage = useCallback((idx: number) => {
+    const st = STAGES[idx];
+    stageRef.current = idx;
+    waypointsRef.current = st.waypoints;
+    const road = pathCells(st.waypoints);
+    pathCellsRef.current = road;
+    noBuildRef.current = new Set(st.noBuild);
+    blockedRef.current = new Set([...road, ...st.noBuild]);
+    pathLenRef.current = pathLength(st.waypoints);
+    baseRef.current = stageBase(st);
+    hpMulRef.current = st.hpMul;
+    setStage(idx);
+  }, []);
+
+  // Wipe the board for a fresh defense (towers, gold, lives, wave, nuke). Does
+  // NOT touch which stage we're on - callers set the stage first.
+  const resetBoard = useCallback(() => {
     resetEnemyIds();
     resetProjectileIds();
     resetParticleSeed();
@@ -259,7 +333,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setBuildType("laser");
     setMenu(null);
     previewRef.current = null;
-    // fresh nuke for the new run
+    // fresh nuke for the new board
     nukeArmedRef.current = false;
     nukeTargetRef.current = null;
     nukeAimRef.current = null;
@@ -268,6 +342,20 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setNukeCount(null);
     setPhase("ready");
   }, []);
+
+  // Restart the whole journey from stage 1.
+  const resetGame = useCallback(() => {
+    applyStage(0);
+    setConfetti("none");
+    resetBoard();
+  }, [applyStage, resetBoard]);
+
+  // Move on to the next stage: new map + scenery, fresh board, +10% tougher.
+  const advanceStage = useCallback(() => {
+    applyStage(stageRef.current + 1);
+    setConfetti("none");
+    resetBoard();
+  }, [applyStage, resetBoard]);
 
   // ---- the game loop -----------------------------------------------------
   useEffect(() => {
@@ -304,7 +392,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     // giant, collision-skipping steps.
     const stepWave = (dt: number) => {
       time.current += dt;
-      const moved = moveEnemies(enemies.current, dt, time.current, PATH_LEN);
+      const moved = moveEnemies(enemies.current, dt, time.current, pathLenRef.current, waypointsRef.current);
       enemies.current = moved.survivors;
       if (moved.leaked > 0) {
         livesRef.current = Math.max(0, livesRef.current - moved.leaked);
@@ -351,8 +439,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         goldRef.current += bonus;
         setGold(goldRef.current);
         if (waveRef.current >= TOTAL_WAVES) {
-          playWin();
-          setPhase("won");
+          // whole stage cleared
+          if (stageRef.current >= TOTAL_STAGES - 1) {
+            // final stage down -> CHAMPION of the journey
+            playWin();
+            setConfetti("gold");
+            setPhase("won");
+          } else {
+            // celebrate this stage, then roll on to the next map
+            playWin();
+            setConfetti("regular");
+            setPhase("stageclear");
+            window.setTimeout(() => advanceStage(), 2600);
+          }
         } else {
           waveRef.current += 1;
           setWave(waveRef.current);
@@ -394,6 +493,12 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           cursor: cursorRef.current,
           preview: previewRef.current,
           nuke: nukeRender(),
+          stageId: STAGES[stageRef.current].id,
+          scenery: STAGES[stageRef.current].scenery,
+          waypoints: waypointsRef.current,
+          pathSet: pathCellsRef.current,
+          noBuild: noBuildRef.current,
+          baseCell: baseRef.current,
         });
         raf = requestAnimationFrame(frame);
         return;
@@ -422,9 +527,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       // the base smokes past half-health, then burns as it nears death
       const hurtFrac = 1 - livesRef.current / START_LIVES;
       if (hurtFrac > 0.5 && Math.random() < dt * (hurtFrac > 0.8 ? 12 : 5))
-        spawnWisp(particlesRef.current, BASE_CELL.x, BASE_CELL.y - 0.35);
+        spawnWisp(particlesRef.current, baseRef.current.x, baseRef.current.y - 0.35);
       if (hurtFrac > 0.8 && Math.random() < dt * 5)
-        spawnExplosion(particlesRef.current, BASE_CELL.x, BASE_CELL.y - 0.4, "#f97316");
+        spawnExplosion(particlesRef.current, baseRef.current.x, baseRef.current.y - 0.4, "#f97316");
 
       draw(ctx, cellRef.current, {
         code,
@@ -442,6 +547,12 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         cursor: cursorRef.current,
         preview: previewRef.current,
         nuke: nukeRender(),
+        stageId: STAGES[stageRef.current].id,
+        scenery: STAGES[stageRef.current].scenery,
+        waypoints: waypointsRef.current,
+        pathSet: pathCellsRef.current,
+        noBuild: noBuildRef.current,
+        baseCell: baseRef.current,
       });
       raf = requestAnimationFrame(frame);
     };
@@ -450,13 +561,13 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [code, startWave]);
+  }, [code, startWave, advanceStage]);
 
   // ---- build / select ----------------------------------------------------
   // Core purchase: validate, place the tower, spend gold, ka-ching. Returns
   // whether it actually built (so callers can close the menu on success only).
   const buildAt = useCallback((col: number, row: number, type: TowerType): boolean => {
-    if (!isBuildable(col, row, BLOCKED)) {
+    if (!isBuildable(col, row, blockedRef.current)) {
       flash("Can't build on the path");
       return false;
     }
@@ -603,7 +714,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       return;
     }
     setSelected(null);
-    if (!isBuildable(col, row, BLOCKED)) {
+    if (!isBuildable(col, row, blockedRef.current)) {
       flash("Can't build on the path");
       closeMenu();
       return;
@@ -729,7 +840,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 sm:px-4 sm:py-3"
         style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
       >
-        {/* wave + auto-start countdown */}
+        {/* stage + wave + auto-start countdown */}
+        <span
+          className="flex items-center gap-1.5 rounded-md bg-white/5 px-2 py-0.5 text-xs font-black text-white/85 sm:text-sm"
+          title="Stage"
+        >
+          S{stage + 1}/{TOTAL_STAGES}
+          <span className="hidden font-bold text-white/55 sm:inline">· {STAGES[stage].name}</span>
+        </span>
         <span className="flex items-center gap-1.5 text-sm font-black text-cyan-400 sm:text-base" title="Wave">
           <Icon.Wave />
           {wave}/{TOTAL_WAVES}
@@ -882,6 +1000,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           <style>{`
             @keyframes nukePop { 0%{transform:scale(.3);opacity:0} 28%{transform:scale(1.18);opacity:1} 100%{transform:scale(1);opacity:.92} }
             @keyframes nukeFlash { 0%{opacity:.9} 100%{opacity:0} }
+            @keyframes confettiFall { 0%{transform:translateY(-30px) rotate(0deg);opacity:1} 100%{transform:translateY(95vh) rotate(720deg);opacity:.85} }
+            @keyframes trophySpin { 0%{transform:rotateY(0deg) scale(1)} 50%{transform:rotateY(180deg) scale(1.08)} 100%{transform:rotateY(360deg) scale(1)} }
+            @keyframes popIn { 0%{transform:scale(.4);opacity:0} 60%{transform:scale(1.1);opacity:1} 100%{transform:scale(1)} }
           `}</style>
           {nukeCount !== null && (
             <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
@@ -1022,27 +1143,68 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             </div>
           )}
 
-          {/* win / lose overlay */}
-          {(phase === "won" || phase === "lost") && (
-            <div
-              className={`absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl ${
-                phase === "lost" ? "bg-black/45" : "bg-black/80 backdrop-blur-sm"
-              }`}
-            >
-              <div className="text-5xl">{phase === "won" ? "🏆" : "💥"}</div>
-              <div className="text-2xl font-black">
-                {phase === "won" ? `${country.name} holds!` : `${country.name} fell`}
+          {/* confetti: rainbow on a stage clear, gold on the championship */}
+          {confetti !== "none" && <Confetti gold={confetti === "gold"} />}
+
+          {/* between-stage celebration banner (auto-advances) */}
+          {phase === "stageclear" && (
+            <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+              <div
+                style={{ animation: "popIn 0.5s ease-out" }}
+                className="rounded-2xl bg-black/70 px-8 py-6 text-center backdrop-blur-sm"
+              >
+                <div className="text-4xl">🎉</div>
+                <div className="mt-1 text-2xl font-black text-emerald-300">Stage {stage + 1} cleared!</div>
+                <div className="mt-1 text-sm text-white/70">
+                  Next up: {STAGES[Math.min(stage + 1, TOTAL_STAGES - 1)].name}
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* CHAMPION: beat all 10 stages - spinning gold cup + golden podium */}
+          {phase === "won" && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-2xl bg-gradient-to-b from-amber-900/85 to-black/90 backdrop-blur-sm">
+              <div className="text-7xl" style={{ animation: "trophySpin 2.2s ease-in-out infinite" }}>
+                🏆
+              </div>
+              <div className="text-3xl font-black text-amber-300" style={{ animation: "popIn 0.5s ease-out" }}>
+                CHAMPION!
+              </div>
+              <div className="flex flex-col items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={flagUrl(code)}
+                  alt=""
+                  className="h-12 w-16 rounded-md object-cover ring-2 ring-amber-300"
+                />
+                <div className="mt-1 text-lg font-black text-white">{country.name}</div>
+                <div className="mt-1 h-3 w-40 rounded-b bg-gradient-to-b from-amber-300 to-amber-600" />
+                <div className="h-6 w-28 rounded-b bg-gradient-to-b from-amber-400 to-amber-700" />
+              </div>
+              <div className="text-sm text-amber-100/80">You conquered all {TOTAL_STAGES} stages!</div>
+              <button
+                onClick={resetGame}
+                className="mt-1 rounded-full bg-amber-300 px-6 py-3 font-black text-black active:scale-95"
+              >
+                Play again
+              </button>
+            </div>
+          )}
+
+          {/* defeat */}
+          {phase === "lost" && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/55">
+              <div className="text-5xl">💥</div>
+              <div className="text-2xl font-black">{country.name} fell</div>
               <div className="text-sm text-white/60">
-                {phase === "won"
-                  ? `You survived all ${TOTAL_WAVES} waves`
-                  : `You reached wave ${wave}`}
+                Stage {stage + 1}, wave {wave}
               </div>
               <button
                 onClick={resetGame}
                 className="rounded-full bg-cyan-400 px-6 py-3 font-bold text-black active:scale-95"
               >
-                Play again
+                Try again
               </button>
             </div>
           )}

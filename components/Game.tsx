@@ -198,6 +198,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [difficulty, setDifficulty] = useState<Difficulty>("Normal");
   const difficultyRef = useRef<Difficulty>("Normal");
   const [showSettings, setShowSettings] = useState(false);
+  const [padConnected, setPadConnected] = useState(false); // a gamepad is plugged in
   // honeycomb build menu: opened by tapping an empty buildable tile
   const [menu, setMenu] = useState<{
     col: number;
@@ -823,6 +824,142 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setPaused(pausedRef.current);
   };
 
+  // ---- gamepad: play the whole game with a Bluetooth controller ----------
+  // The pad drives the same tile cursor the keyboard uses. Handlers are refreshed
+  // each render into a ref so the single polling loop always calls the latest
+  // ones (no loop restarts, no stale closures).
+  const noop = () => {};
+  const padActionsRef = useRef<{
+    move: (dx: number, dy: number) => void;
+    confirm: () => void;
+    cancel: () => void;
+    upgrade: () => void;
+    sell: () => void;
+    tower: (dir: number) => void;
+    nuke: () => void;
+    speed: () => void;
+    pause: () => void;
+  }>({
+    move: noop,
+    confirm: noop,
+    cancel: noop,
+    upgrade: noop,
+    sell: noop,
+    tower: noop,
+    nuke: noop,
+    speed: noop,
+    pause: noop,
+  });
+  useEffect(() => {
+    padActionsRef.current = {
+      move: (dx, dy) => {
+        const cur = cursorRef.current ?? { x: 6, y: 4 };
+        cursorRef.current = {
+          x: Math.max(0, Math.min(GRID_COLS - 1, cur.x + dx)),
+          y: Math.max(0, Math.min(GRID_ROWS - 1, cur.y + dy)),
+        };
+      },
+      confirm: () => {
+        unlockAudio();
+        const cur = cursorRef.current ?? { x: 6, y: 4 };
+        cursorRef.current = cur;
+        if (nukeArmedRef.current) dropNukeAt(cur.x, cur.y);
+        else selectOrBuild(cur.x, cur.y);
+      },
+      cancel: () => {
+        if (nukeArmedRef.current) {
+          nukeArmedRef.current = false;
+          setNukeArmed(false);
+        }
+        setSelected(null);
+        closeMenu();
+      },
+      upgrade: doUpgrade,
+      sell: doSell,
+      tower: (dir) => {
+        const i = TOWER_ORDER.indexOf(buildTypeRef.current ?? "laser");
+        setSelected(null);
+        setBuildType(TOWER_ORDER[(i + dir + TOWER_ORDER.length) % TOWER_ORDER.length]);
+      },
+      nuke: armNuke,
+      speed: cycleSpeed,
+      pause: togglePause,
+    };
+  });
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("getGamepads" in navigator)) return;
+    const onConn = () => {
+      setPadConnected(true);
+      flash("🎮 Controller ready");
+    };
+    const onDisc = () => setPadConnected(!!navigator.getGamepads?.().some(Boolean));
+    window.addEventListener("gamepadconnected", onConn);
+    window.addEventListener("gamepaddisconnected", onDisc);
+
+    let raf = 0;
+    const prev: boolean[] = [];
+    let moveCooldown = 0;
+    let lastT = performance.now();
+    const DEAD = 0.5;
+
+    const poll = () => {
+      const now = performance.now();
+      const dt = now - lastT;
+      lastT = now;
+      const pads = navigator.getGamepads?.() ?? [];
+      const gp = Array.from(pads).find(Boolean);
+      if (gp) {
+        const a = padActionsRef.current;
+        const b = gp.buttons;
+        const pressed = (i: number) => !!b[i]?.pressed;
+        const rising = (i: number) => {
+          const p = pressed(i);
+          const r = p && !prev[i];
+          prev[i] = p;
+          return r;
+        };
+        // movement: d-pad (12-15) or left stick, with a repeat cooldown
+        let dx = 0;
+        let dy = 0;
+        const ax = gp.axes[0] ?? 0;
+        const ay = gp.axes[1] ?? 0;
+        if (pressed(14) || ax < -DEAD) dx = -1;
+        else if (pressed(15) || ax > DEAD) dx = 1;
+        if (pressed(12) || ay < -DEAD) dy = -1;
+        else if (pressed(13) || ay > DEAD) dy = 1;
+        moveCooldown -= dt;
+        if ((dx || dy) && moveCooldown <= 0) {
+          a.move(dx, dy);
+          moveCooldown = 160; // ms between steps while held
+        } else if (!dx && !dy) {
+          moveCooldown = 0; // move immediately on the next press
+        }
+        // action buttons (edge-triggered)
+        if (rising(0)) a.confirm(); // A - place / select / drop nuke
+        if (rising(1)) a.cancel(); // B - cancel / close
+        if (rising(2)) a.tower(-1); // X - previous tower
+        if (rising(3)) a.tower(1); // Y - next tower
+        if (rising(4)) a.tower(-1); // LB - previous tower
+        if (rising(5)) a.tower(1); // RB - next tower
+        if (rising(6)) a.speed(); // LT - game speed
+        if (rising(7)) a.upgrade(); // RT - upgrade selected
+        if (rising(8)) a.sell(); // Back/Select - sell selected
+        if (rising(9)) a.pause(); // Start - pause
+        if (rising(16)) a.nuke(); // Guide/other - nuke (where present)
+        // keep the rest of the button edges fresh so none get stuck
+        for (let i = 0; i < b.length; i++) prev[i] = pressed(i);
+      }
+      raf = requestAnimationFrame(poll);
+    };
+    raf = requestAnimationFrame(poll);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("gamepadconnected", onConn);
+      window.removeEventListener("gamepaddisconnected", onDisc);
+    };
+  }, []);
+
   // clean up the hint timer on unmount
   useEffect(() => () => {
     if (hintTimer.current) clearTimeout(hintTimer.current);
@@ -848,6 +985,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           S{stage + 1}/{TOTAL_STAGES}
           <span className="hidden font-bold text-white/55 sm:inline">· {STAGES[stage].name}</span>
         </span>
+        {padConnected && (
+          <span className="text-sm" title="Controller connected - move with the d-pad, A to place, B to cancel">
+            🎮
+          </span>
+        )}
         <span className="flex items-center gap-1.5 text-sm font-black text-cyan-400 sm:text-base" title="Wave">
           <Icon.Wave />
           {wave}/{TOTAL_WAVES}

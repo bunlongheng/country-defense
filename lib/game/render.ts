@@ -23,6 +23,7 @@ export interface DrawState {
   buildType: TowerType | null;
   cursor?: { x: number; y: number } | null;
   preview?: { cell: Vec2; type: TowerType } | null; // ghost + range for the honeycomb pick
+  nuke?: { x: number; y: number; radius: number; armed: boolean } | null; // targeting reticle
 }
 
 // One global sun direction so every dome, marble and mountain is lit the same way.
@@ -354,6 +355,56 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // smoke + sparks on top of everything
   drawParticles(ctx, cell, s.particles);
+
+  // nuke targeting reticle: a red blast-radius ring + crosshair over the target
+  if (s.nuke) drawNukeReticle(ctx, cell, s.nuke, s.time);
+}
+
+// A menacing targeting reticle for the nuke: a filled red danger zone, a dashed
+// spinning ring at the blast radius, and a crosshair on the exact target.
+function drawNukeReticle(
+  ctx: CanvasRenderingContext2D,
+  cell: number,
+  n: { x: number; y: number; radius: number; armed: boolean },
+  time: number,
+) {
+  const cx = (n.x + 0.5) * cell;
+  const cy = (n.y + 0.5) * cell;
+  const R = n.radius * cell;
+  const pulse = 0.5 + 0.5 * Math.sin(time * 6);
+  // danger fill
+  const g = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
+  g.addColorStop(0, `rgba(239,68,68,${0.12 + pulse * 0.12})`);
+  g.addColorStop(1, "rgba(239,68,68,0.02)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+  // spinning dashed blast ring
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(n.armed ? time * 1.2 : -time * 2);
+  ctx.setLineDash([14, 10]);
+  ctx.strokeStyle = `rgba(248,113,113,${0.7 + pulse * 0.3})`;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  // crosshair
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2;
+  const ch = cell * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - ch, cy);
+  ctx.lineTo(cx + ch, cy);
+  ctx.moveTo(cx, cy - ch);
+  ctx.lineTo(cx, cy + ch);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, cell * 0.22, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 // Realistic fire: a warm glow + several swaying tongues, each filled with a

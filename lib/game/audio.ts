@@ -111,6 +111,11 @@ const SHOOT: Record<TowerType, () => void> = {
   },
 };
 
+/** Ominous descending beep for the nuke's 3-2-1 countdown (n = 3, 2, 1). */
+export function playNukeTick(n: number) {
+  blip(180 + n * 90, 0.18, "square", 0.5, 120 + n * 60);
+}
+
 /** A meaty explosion - used when a lobbed bomb lands and for the nuke blast. */
 export function playBoom(big = false) {
   noise(big ? 0.6 : 0.32, big ? 0.6 : 0.4, big ? 90 : 160);

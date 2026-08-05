@@ -28,6 +28,7 @@ import {
   playWin,
   playLose,
   playBoom,
+  playNukeTick,
 } from "@/lib/game/audio";
 import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
@@ -72,6 +73,7 @@ import {
 
 const START_GOLD = 200;
 const START_LIVES = 10;
+const NUKE_RADIUS = 3; // tiles wiped by the one-per-game nuke
 const BLOCKED = pathCells();
 const PATH_LEN = pathLength();
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
@@ -124,6 +126,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // live range/ghost preview drawn on the canvas while the honeycomb menu is open
   const previewRef = useRef<{ cell: { x: number; y: number }; type: TowerType } | null>(null);
   const particlesRef = useRef<Particle[]>([]); // smoke + sparks + embers
+  // nuke: one strike per game. armed = picking a spot; target/count drive the reticle + countdown.
+  const nukeArmedRef = useRef(false);
+  const nukeTargetRef = useRef<{ x: number; y: number } | null>(null);
+  const nukeAimRef = useRef<{ x: number; y: number } | null>(null); // pointer while aiming
+  const [nukeUsed, setNukeUsed] = useState(false);
+  const [nukeArmed, setNukeArmed] = useState(false);
+  const [nukeCount, setNukeCount] = useState<number | null>(null); // 3/2/1 overlay
+  const [nukeFlash, setNukeFlash] = useState(false);
 
   // HUD state (updated from the loop only when a value changes)
   const [gold, setGold] = useState(START_GOLD);
@@ -249,6 +259,13 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setBuildType("laser");
     setMenu(null);
     previewRef.current = null;
+    // fresh nuke for the new run
+    nukeArmedRef.current = false;
+    nukeTargetRef.current = null;
+    nukeAimRef.current = null;
+    setNukeUsed(false);
+    setNukeArmed(false);
+    setNukeCount(null);
     setPhase("ready");
   }, []);
 
@@ -344,6 +361,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       }
     };
 
+    // the nuke reticle to draw: the locked target during countdown, otherwise the
+    // live aim point while the player is choosing where to strike
+    const nukeRender = () => {
+      const t = nukeTargetRef.current ?? (nukeArmedRef.current ? nukeAimRef.current : null);
+      return t
+        ? { x: t.x, y: t.y, radius: NUKE_RADIUS, armed: nukeArmedRef.current && !nukeTargetRef.current }
+        : null;
+    };
+
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
@@ -367,6 +393,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           buildType: buildTypeRef.current,
           cursor: cursorRef.current,
           preview: previewRef.current,
+          nuke: nukeRender(),
         });
         raf = requestAnimationFrame(frame);
         return;
@@ -414,6 +441,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         buildType: buildTypeRef.current,
         cursor: cursorRef.current,
         preview: previewRef.current,
+        nuke: nukeRender(),
       });
       raf = requestAnimationFrame(frame);
     };
@@ -455,6 +483,97 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     previewRef.current = null;
   }, []);
 
+  // ---- nuke: one strike per game -----------------------------------------
+  // Wipe every enemy inside the blast crater, award their bounties, and throw a
+  // big multi-burst explosion + screen flash.
+  const detonateNuke = useCallback(() => {
+    const t = nukeTargetRef.current;
+    if (!t) return;
+    let killed = 0;
+    let gold = 0;
+    const survivors: Enemy[] = [];
+    for (const e of enemies.current) {
+      if (e.dist >= 0 && Math.hypot(e.pos.x - t.x, e.pos.y - t.y) <= NUKE_RADIUS) {
+        killed++;
+        gold += e.reward;
+        spawnExplosion(particlesRef.current, e.pos.x, e.pos.y, "#f97316");
+      } else {
+        survivors.push(e);
+      }
+    }
+    enemies.current = survivors;
+    // giant central blast across the crater
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      const rr = (k % 3) * 0.9;
+      spawnExplosion(
+        particlesRef.current,
+        t.x + Math.cos(a) * rr,
+        t.y + Math.sin(a) * rr,
+        k % 2 ? "#fde047" : "#f97316",
+      );
+    }
+    if (gold > 0) {
+      goldRef.current += gold;
+      setGold(goldRef.current);
+    }
+    if (killed > 0) {
+      killsRef.current += killed;
+      setKills(killsRef.current);
+    }
+    playBoom(true);
+    setNukeCount(null);
+    nukeTargetRef.current = null;
+    setNukeFlash(true);
+    window.setTimeout(() => setNukeFlash(false), 380);
+  }, []);
+
+  // Lock the target and run the 3-2-1 countdown, then detonate.
+  const dropNukeAt = useCallback(
+    (x: number, y: number) => {
+      nukeArmedRef.current = false;
+      setNukeArmed(false);
+      nukeTargetRef.current = { x, y };
+      setNukeUsed(true); // consumed the moment a spot is chosen
+      setNukeCount(3);
+      playNukeTick(3);
+      window.setTimeout(() => {
+        if (nukeTargetRef.current) { setNukeCount(2); playNukeTick(2); }
+      }, 800);
+      window.setTimeout(() => {
+        if (nukeTargetRef.current) { setNukeCount(1); playNukeTick(1); }
+      }, 1600);
+      window.setTimeout(() => {
+        if (nukeTargetRef.current) detonateNuke();
+      }, 2400);
+    },
+    [detonateNuke],
+  );
+
+  // Arm targeting mode: the next tap on the arena drops the nuke there.
+  const armNuke = useCallback(() => {
+    unlockAudio();
+    if (nukeUsed || nukeArmedRef.current || nukeTargetRef.current) return;
+    setSelected(null);
+    setMenu(null);
+    previewRef.current = null;
+    nukeAimRef.current = { x: GRID_COLS / 2 - 0.5, y: GRID_ROWS / 2 - 0.5 };
+    nukeArmedRef.current = true;
+    setNukeArmed(true);
+    flash("Tap where to nuke");
+  }, [nukeUsed]);
+
+  // Track the aim point under the pointer while arming (drives the live reticle).
+  const onCanvasMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!nukeArmedRef.current) return;
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const cell = cellRef.current;
+    nukeAimRef.current = {
+      x: (e.clientX - rect.left) / cell - 0.5,
+      y: (e.clientY - rect.top) / cell - 0.5,
+    };
+  };
+
   // Tap a tile: existing tower -> select it; empty buildable tile -> open the
   // honeycomb menu of towers to pick from; road -> reject.
   const onCanvasPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -462,6 +581,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const cell = cellRef.current;
+    // arming the nuke: this tap picks the strike spot instead of building
+    if (nukeArmedRef.current) {
+      dropNukeAt((e.clientX - rect.left) / cell - 0.5, (e.clientY - rect.top) / cell - 0.5);
+      return;
+    }
     cursorRef.current = null; // pointer play hides the keyboard cursor
     const col = Math.floor((e.clientX - rect.left) / cell);
     const row = Math.floor((e.clientY - rect.top) / cell);
@@ -623,6 +747,22 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             <Icon.Skull />
             {kills}
           </span>
+          {/* nuke: one strike per game */}
+          {!nukeUsed && (
+            <button
+              onClick={armNuke}
+              className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-black active:scale-95 ${
+                nukeArmed
+                  ? "animate-pulse border-rose-400 bg-rose-500/30 text-rose-100"
+                  : "border-rose-500/60 bg-rose-600/20 text-rose-300"
+              }`}
+              aria-label="Nuke - one strike per game"
+              title="Nuke (one strike per game)"
+            >
+              <span className="text-base leading-none">☢</span>
+              {nukeArmed ? "Tap map" : "NUKE"}
+            </button>
+          )}
         </div>
         {/* controls */}
         <div className="flex items-center gap-3 sm:gap-4">
@@ -730,10 +870,40 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           <canvas
             ref={canvasRef}
             onPointerDown={onCanvasPointer}
+            onPointerMove={onCanvasMove}
             role="img"
             aria-label="Battle map - tap an open tile to open the tower menu, tap a tower to upgrade it"
-            className="block touch-none rounded-2xl ring-1 ring-white/10"
+            className={`block touch-none rounded-2xl ring-1 ring-white/10 ${
+              nukeArmed ? "cursor-crosshair" : ""
+            }`}
           />
+
+          {/* nuke: giant 3-2-1 countdown + a blinding detonation flash */}
+          <style>{`
+            @keyframes nukePop { 0%{transform:scale(.3);opacity:0} 28%{transform:scale(1.18);opacity:1} 100%{transform:scale(1);opacity:.92} }
+            @keyframes nukeFlash { 0%{opacity:.9} 100%{opacity:0} }
+          `}</style>
+          {nukeCount !== null && (
+            <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+              <div
+                key={nukeCount}
+                className="font-black text-rose-500"
+                style={{
+                  fontSize: "22vh",
+                  textShadow: "0 0 30px rgba(244,63,94,0.85)",
+                  animation: "nukePop 0.7s ease-out",
+                }}
+              >
+                {nukeCount}
+              </div>
+            </div>
+          )}
+          {nukeFlash && (
+            <div
+              className="pointer-events-none absolute inset-0 z-50 rounded-2xl bg-white"
+              style={{ animation: "nukeFlash 0.38s ease-out forwards" }}
+            />
+          )}
 
           {/* square build menu: 8 tiles around the center (the tile you're placing
               on stays open in the middle so it is never covered) */}

@@ -9,7 +9,7 @@ import { pointAtDistance } from "./map.ts";
 
 export const TOTAL_WAVES = 10;
 
-const BASE_HP = 34;
+const BASE_HP = 27; // 20% less tanky than before - Normal was unfairly spongy
 const BASE_SPEED = 1.8; // tiles/sec - 2x: invaders rush in, giving towers half the window
 // Small per-kill reward: waves now have ~19 invaders each, so a low bounty keeps
 // gold reasonable and the game challenging instead of a runaway pile of cash.

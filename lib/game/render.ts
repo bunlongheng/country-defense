@@ -782,20 +782,50 @@ function drawShot(
       break;
     }
     case "cannon": {
-      // heavy shell mid-flight + explosion ring at the target
-      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      ctx.fillStyle = "#1f2937";
+      // a blazing FIREBALL with a fiery comet trail - the cannon shoots fire, and
+      // it's bright so you can always see it against the dark ground
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const headR = s * 0.3;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter"; // fire adds up where it overlaps
+      ctx.lineCap = "round";
+      // comet trail: a tapering hot streak from the muzzle up to the fireball
+      const tail = { x: b.x - Math.cos(ang) * s * 0.7, y: b.y - Math.sin(ang) * s * 0.7 };
+      const tg = ctx.createLinearGradient(tail.x, tail.y, b.x, b.y);
+      tg.addColorStop(0, "rgba(249,115,22,0)");
+      tg.addColorStop(0.55, "rgba(249,115,22,0.55)");
+      tg.addColorStop(1, "rgba(255,220,120,0.9)");
+      ctx.strokeStyle = tg;
+      ctx.lineWidth = headR * 1.1;
+      line(ctx, tail, b);
+      // soft orange glow halo around the fireball
+      const glow = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, headR * 2.3);
+      glow.addColorStop(0, "rgba(255,150,40,0.75)");
+      glow.addColorStop(1, "rgba(255,80,0,0)");
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(m.x, m.y, s * 0.1, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, headR * 2.3, 0, Math.PI * 2);
       ctx.fill();
-      const g = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, s * 0.34);
-      g.addColorStop(0, "rgba(255,220,120,0.9)");
-      g.addColorStop(0.5, "rgba(249,115,22,0.6)");
-      g.addColorStop(1, "rgba(249,115,22,0)");
-      ctx.fillStyle = g;
+      // flame licks flicking off the trailing edge (jittered per shot)
+      ctx.fillStyle = "rgba(255,190,70,0.9)";
+      for (let k = 0; k < 3; k++) {
+        const fa = ang + Math.PI + (k - 1) * 0.55 + pr.jitter;
+        const fl = headR * (0.95 + (k % 2) * 0.55);
+        ctx.beginPath();
+        ctx.arc(b.x + Math.cos(fa) * fl, b.y + Math.sin(fa) * fl, headR * 0.34, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // molten core: white-hot -> yellow -> orange -> red
+      const core = ctx.createRadialGradient(b.x - headR * 0.25, b.y - headR * 0.25, 1, b.x, b.y, headR);
+      core.addColorStop(0, "rgba(255,255,245,1)");
+      core.addColorStop(0.35, "#fde047");
+      core.addColorStop(0.7, "#f97316");
+      core.addColorStop(1, "#dc2626");
+      ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, s * 0.34, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, headR, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
       break;
     }
     case "frost": {

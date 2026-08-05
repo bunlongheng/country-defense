@@ -426,7 +426,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     if (towers.current.some((t) => t.cell.x === col && t.cell.y === row)) return false;
     const cost = TOWER_DEFS[type].cost;
     if (goldRef.current < cost) {
-      flash(`Need ${cost} gold`);
+      flash(`Need $${cost}`);
       return false;
     }
     towers.current.push({
@@ -758,7 +758,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                       onClick={() => {
                         if (buildAt(menu.col, menu.row, type)) closeMenu();
                       }}
-                      title={`${d.name} - ${d.cost} gold`}
+                      title={`${d.name} - $${d.cost}`}
                       className="absolute flex h-[54px] w-[54px] flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
                       style={{
                         left: ox * MENU_STEP,
@@ -772,7 +772,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                         {d.icon}
                       </span>
                       <span className="text-[9px] font-bold leading-none text-amber-300">
-                        {d.cost}
+                        ${d.cost}
                       </span>
                     </button>
                   );
@@ -818,7 +818,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                     </svg>
                   ))}
                 </span>
-                <span className="text-white/60">Lv {selected.level}/{MAX_LEVEL}</span>
               </div>
               <div className="mt-2 flex gap-2">
                 <button
@@ -827,17 +826,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                     selected.level >= MAX_LEVEL ||
                     gold < upgradeCost(selected.type, selected.level)
                   }
-                  className="min-h-11 rounded-lg bg-cyan-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-40"
+                  className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold text-black disabled:opacity-40"
+                  style={{ backgroundColor: TOWER_DEFS[selected.type].color }}
                 >
                   {selected.level >= MAX_LEVEL
                     ? "Max level"
-                    : `Upgrade to Lv ${selected.level + 1} · ${upgradeCost(selected.type, selected.level)}`}
+                    : `Upgrade $${upgradeCost(selected.type, selected.level)}`}
                 </button>
                 <button
                   onClick={doSell}
-                  className="min-h-11 rounded-lg border border-white/20 px-3 py-2 text-sm text-white/80"
+                  className="min-h-11 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white"
                 >
-                  Sell {sellValue(selected.type, selected.level)}
+                  Sell ${sellValue(selected.type, selected.level)}
                 </button>
               </div>
             </div>

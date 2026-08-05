@@ -123,7 +123,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     type: "bomber",
     name: "Bomb Thrower",
     blurb: "Lobs a bomb that ends any country, no matter its health",
-    color: "#1f2937", // a black tank
+    color: "#556072", // a dark gunmetal tank - reads "black" but stays visible so
+    // its size grows are easy to see when upgrading (pure black vanished on the map)
     icon: "💣",
     cost: 130, // pricey: an instant kill on a slow fuse
     range: 3,

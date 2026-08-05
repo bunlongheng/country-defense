@@ -123,12 +123,14 @@ export function playBoom(big = false) {
   if (big) blip(150, 0.7, "sawtooth", 0.35, 30);
 }
 
-// Throttle firing sounds globally so a wall of rapid towers stays crisp, not a
-// wash of overlapping blips. Time is passed in from the game loop.
-let lastShoot = -1;
+// Throttle firing sounds PER TOWER TYPE (not globally) so every weapon keeps its
+// own voice - a laser and a cannon firing on the same frame both get heard, they
+// don't cancel each other out. Each type is limited to ~11 shots/sec so a wall of
+// one kind stays crisp instead of a wash of overlapping blips.
+const lastShootByType: Partial<Record<TowerType, number>> = {};
 export function playShoot(type: TowerType, time: number) {
-  if (time - lastShoot < 0.05) return;
-  lastShoot = time;
+  if (time - (lastShootByType[type] ?? -1) < 0.09) return;
+  lastShootByType[type] = time;
   SHOOT[type]?.();
 }
 

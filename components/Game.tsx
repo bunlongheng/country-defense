@@ -401,7 +401,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       const fired = fireTowers(towers.current, enemies.current, dt, time.current);
       if (fired.projectiles.length) {
         projectiles.current.push(...fired.projectiles);
-        playShoot(fired.projectiles[0].type, time.current);
+        // sound EACH distinct weapon that fired this frame (not just the first),
+        // so every tower type is heard - a later-placed laser isn't silenced by
+        // an earlier tower firing on the same frame
+        const firedTypes = new Set(fired.projectiles.map((p) => p.type));
+        for (const t of firedTypes) playShoot(t, time.current);
         playImpact(time.current);
       }
       // lobbed bombs: home onto their target and detonate on landing

@@ -116,6 +116,11 @@ export function playNukeTick(n: number) {
   blip(180 + n * 90, 0.18, "square", 0.5, 120 + n * 60);
 }
 
+/** The falling-warhead whistle, right before the big boom. */
+export function playNukeStrike() {
+  blip(1400, 0.35, "sine", 0.4, 200);
+}
+
 /** A meaty explosion - used when a lobbed bomb lands and for the nuke blast. */
 export function playBoom(big = false) {
   noise(big ? 0.6 : 0.32, big ? 0.6 : 0.4, big ? 90 : 160);

@@ -25,6 +25,7 @@ export interface DrawState {
   cursor?: { x: number; y: number } | null;
   preview?: { cell: Vec2; type: TowerType } | null; // ghost + range for the honeycomb pick
   nuke?: { x: number; y: number; radius: number; armed: boolean } | null; // targeting reticle
+  nukeBlast?: { x: number; y: number; born: number } | null; // missile drop + mushroom cloud
   stageId?: number; // which stage's map + scenery to draw (1..10)
   scenery?: Scenery; // ground/road/decor theme for the current stage
   waypoints?: Vec2[]; // the current stage's path (defaults to stage 1)
@@ -603,6 +604,140 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // nuke targeting reticle: a red blast-radius ring + crosshair over the target
   if (s.nuke) drawNukeReticle(ctx, cell, s.nuke, s.time);
+  // nuke strike: a warhead dropping in, then a mushroom cloud
+  if (s.nukeBlast) drawNukeBlast(ctx, cell, s.nukeBlast, s.time);
+}
+
+// The nuke's own assets: a warhead "bullet" streaks down from the sky onto the
+// target (age 0-0.35s), then a full mushroom cloud blooms and fades (0.35-1.7s):
+// a white-hot core, an expanding shockwave ring, a rising stem and a billowing cap.
+function drawNukeBlast(
+  ctx: CanvasRenderingContext2D,
+  cell: number,
+  bl: { x: number; y: number; born: number },
+  time: number,
+) {
+  const cx = (bl.x + 0.5) * cell;
+  const gy = (bl.y + 0.5) * cell; // ground zero
+  const age = time - bl.born;
+
+  // ---- incoming warhead (the "bullet") ----
+  if (age < 0.35) {
+    const t = age / 0.35;
+    const y = gy - (1 - t) * cell * 6; // falls from 6 tiles up
+    const L = cell * 0.5;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    // fiery exhaust trail above the warhead
+    const tg = ctx.createLinearGradient(cx, y - L * 2.4, cx, y);
+    tg.addColorStop(0, "rgba(255,180,40,0)");
+    tg.addColorStop(1, "rgba(255,220,120,0.9)");
+    ctx.strokeStyle = tg;
+    ctx.lineWidth = cell * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, y - L * 2.4);
+    ctx.lineTo(cx, y - L * 0.7);
+    ctx.stroke();
+    ctx.restore();
+    // warhead body: dark casing, red nose, tail fins
+    ctx.fillStyle = "#e2e8f0";
+    ctx.beginPath();
+    ctx.moveTo(cx, y); // nose
+    ctx.lineTo(cx - L * 0.28, y - L * 0.55);
+    ctx.lineTo(cx - L * 0.28, y - L * 1.3);
+    ctx.lineTo(cx + L * 0.28, y - L * 1.3);
+    ctx.lineTo(cx + L * 0.28, y - L * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ef4444"; // red nose cone
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    ctx.lineTo(cx - L * 0.28, y - L * 0.55);
+    ctx.lineTo(cx + L * 0.28, y - L * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#334155"; // tail fins
+    ctx.beginPath();
+    ctx.moveTo(cx - L * 0.28, y - L * 1.05);
+    ctx.lineTo(cx - L * 0.5, y - L * 1.35);
+    ctx.lineTo(cx - L * 0.28, y - L * 1.35);
+    ctx.moveTo(cx + L * 0.28, y - L * 1.05);
+    ctx.lineTo(cx + L * 0.5, y - L * 1.35);
+    ctx.lineTo(cx + L * 0.28, y - L * 1.35);
+    ctx.fill();
+    return;
+  }
+
+  // ---- mushroom cloud ----
+  const a = Math.min(1, (age - 0.35) / 1.35); // 0..1 over the cloud's life
+  const fade = a < 0.75 ? 1 : 1 - (a - 0.75) / 0.25; // hold, then fade out
+  const R = cell * 2.6; // blast reach
+  ctx.save();
+
+  // expanding shockwave ring on the ground
+  const ringR = R * (0.3 + a * 1.05);
+  ctx.strokeStyle = `rgba(255,210,120,${0.5 * fade * (1 - a)})`;
+  ctx.lineWidth = cell * 0.14 * (1 - a * 0.5);
+  ctx.beginPath();
+  ctx.ellipse(cx, gy, ringR, ringR * 0.4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalCompositeOperation = "lighter";
+  // white-hot ground flash early on
+  if (a < 0.4) {
+    const fl = ctx.createRadialGradient(cx, gy, 1, cx, gy, R * 0.9);
+    fl.addColorStop(0, `rgba(255,255,240,${(1 - a / 0.4) * 0.9})`);
+    fl.addColorStop(1, "rgba(255,180,60,0)");
+    ctx.fillStyle = fl;
+    ctx.beginPath();
+    ctx.arc(cx, gy, R * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const rise = a * R * 1.3; // how high the cloud has climbed
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = fade;
+
+  // rising stem
+  const stemW = R * (0.24 + a * 0.1);
+  const stemH = rise;
+  const sg = ctx.createLinearGradient(cx, gy, cx, gy - stemH);
+  sg.addColorStop(0, "rgba(120,90,70,0.9)");
+  sg.addColorStop(1, "rgba(160,120,90,0.75)");
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.moveTo(cx - stemW * 0.5, gy);
+  ctx.quadraticCurveTo(cx - stemW * 0.35, gy - stemH * 0.6, cx - stemW * 0.4, gy - stemH);
+  ctx.lineTo(cx + stemW * 0.4, gy - stemH);
+  ctx.quadraticCurveTo(cx + stemW * 0.35, gy - stemH * 0.6, cx + stemW * 0.5, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  // billowing cap: overlapping puffs, warm underglow
+  const capY = gy - stemH;
+  const capR = R * (0.5 + a * 0.7);
+  const puffs = [
+    [0, 0, 1],
+    [-0.7, 0.15, 0.7],
+    [0.7, 0.15, 0.7],
+    [-0.35, -0.3, 0.6],
+    [0.35, -0.3, 0.6],
+  ];
+  for (const [ox, oy, s2] of puffs) {
+    const px = cx + ox * capR;
+    const py = capY + oy * capR;
+    const pr = capR * s2;
+    const g = ctx.createRadialGradient(px, py + pr * 0.3, pr * 0.2, px, py, pr);
+    g.addColorStop(0, "rgba(255,170,70,0.85)");
+    g.addColorStop(0.5, "rgba(150,110,90,0.9)");
+    g.addColorStop(1, "rgba(90,70,60,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // A menacing targeting reticle for the nuke: a filled red danger zone, a dashed

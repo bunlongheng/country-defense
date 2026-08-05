@@ -10,6 +10,7 @@ import {
   Volume2,
   VolumeX,
   Settings,
+  Radiation,
 } from "lucide-react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
@@ -29,6 +30,7 @@ import {
   playLose,
   playBoom,
   playNukeTick,
+  playNukeStrike,
 } from "@/lib/game/audio";
 import type { Enemy, Projectile, Tower, TowerType } from "@/lib/game/types";
 import {
@@ -142,6 +144,26 @@ const Icon = {
 
 type Phase = "ready" | "wave" | "stageclear" | "won" | "lost";
 
+// Pick black or white text so a themed button stays readable on any tower color
+// (the dark gunmetal Bomb Thrower needs white; bright cyan/orange need black).
+function readableOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum < 145 ? "#ffffff" : "#000000";
+}
+
+// A tower's accent color for text/stars ON the dark panel - lightened when the
+// color itself is dark (the Bomb Thrower gunmetal) so it doesn't vanish.
+function labelColor(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  if (0.299 * r + 0.587 * g + 0.114 * b >= 120) return hex;
+  const mix = (c: number) => Math.round(c + (255 - c) * 0.55);
+  return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+}
+
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -179,6 +201,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const nukeArmedRef = useRef(false);
   const nukeTargetRef = useRef<{ x: number; y: number } | null>(null);
   const nukeAimRef = useRef<{ x: number; y: number } | null>(null); // pointer while aiming
+  const nukeBlastRef = useRef<{ x: number; y: number; born: number } | null>(null); // warhead + cloud
   const [nukeUsed, setNukeUsed] = useState(false);
   const [nukeArmed, setNukeArmed] = useState(false);
   const [nukeCount, setNukeCount] = useState<number | null>(null); // 3/2/1 overlay
@@ -337,6 +360,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     nukeArmedRef.current = false;
     nukeTargetRef.current = null;
     nukeAimRef.current = null;
+    nukeBlastRef.current = null;
     setNukeUsed(false);
     setNukeArmed(false);
     setNukeCount(null);
@@ -497,6 +521,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           cursor: cursorRef.current,
           preview: previewRef.current,
           nuke: nukeRender(),
+          nukeBlast: nukeBlastRef.current,
           stageId: STAGES[stageRef.current].id,
           scenery: STAGES[stageRef.current].scenery,
           waypoints: waypointsRef.current,
@@ -551,6 +576,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         cursor: cursorRef.current,
         preview: previewRef.current,
         nuke: nukeRender(),
+        nukeBlast: nukeBlastRef.current,
         stageId: STAGES[stageRef.current].id,
         scenery: STAGES[stageRef.current].scenery,
         waypoints: waypointsRef.current,
@@ -643,7 +669,21 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     window.setTimeout(() => setNukeFlash(false), 380);
   }, []);
 
-  // Lock the target and run the 3-2-1 countdown, then detonate.
+  // After the countdown: a warhead drops in (0.35s), then it detonates and the
+  // mushroom cloud blooms + fades (~1.7s total).
+  const launchNuke = useCallback(() => {
+    const t = nukeTargetRef.current;
+    if (!t) return;
+    nukeBlastRef.current = { x: t.x, y: t.y, born: performance.now() / 1000 };
+    setNukeCount(null);
+    playNukeStrike(); // incoming whistle
+    window.setTimeout(() => detonateNuke(), 350); // warhead lands -> boom
+    window.setTimeout(() => {
+      nukeBlastRef.current = null;
+    }, 1750);
+  }, [detonateNuke]);
+
+  // Lock the target and run the 3-2-1 countdown, then launch the strike.
   const dropNukeAt = useCallback(
     (x: number, y: number) => {
       nukeArmedRef.current = false;
@@ -659,10 +699,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         if (nukeTargetRef.current) { setNukeCount(1); playNukeTick(1); }
       }, 1600);
       window.setTimeout(() => {
-        if (nukeTargetRef.current) detonateNuke();
+        if (nukeTargetRef.current) launchNuke();
       }, 2400);
     },
-    [detonateNuke],
+    [launchNuke],
   );
 
   // Arm targeting mode: the next tap on the arena drops the nuke there.
@@ -1007,7 +1047,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               aria-label="Nuke - one strike per game"
               title="Nuke (one strike per game)"
             >
-              <span className="text-base leading-none">☢</span>
+              <Radiation className="h-4 w-4 sm:h-5 sm:w-5" />
               {nukeArmed ? "Tap map" : "NUKE"}
             </button>
           )}
@@ -1228,7 +1268,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             >
               <div
                 className="flex items-center justify-center gap-2 text-sm font-bold"
-                style={{ color: TOWER_DEFS[selected.type].color }}
+                style={{ color: labelColor(TOWER_DEFS[selected.type].color) }}
               >
                 {TOWER_DEFS[selected.type].name}
                 <span className="flex gap-0.5">
@@ -1240,7 +1280,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                       style={{
                         fill:
                           i < selected.level
-                            ? TOWER_DEFS[selected.type].color
+                            ? labelColor(TOWER_DEFS[selected.type].color)
                             : "rgba(255,255,255,0.2)",
                       }}
                     >
@@ -1256,8 +1296,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                     selected.level >= MAX_LEVEL ||
                     gold < upgradeCost(selected.type, selected.level)
                   }
-                  className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold text-black disabled:opacity-40"
-                  style={{ backgroundColor: TOWER_DEFS[selected.type].color }}
+                  className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-40"
+                  style={{
+                    backgroundColor: TOWER_DEFS[selected.type].color,
+                    color: readableOn(TOWER_DEFS[selected.type].color),
+                  }}
                 >
                   {selected.level >= MAX_LEVEL
                     ? "Max level"

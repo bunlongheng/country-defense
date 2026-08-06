@@ -251,6 +251,25 @@ function TowerChip({ type }: { type: TowerType }) {
   return <canvas ref={ref} className="h-[40px] w-[40px]" aria-hidden />;
 }
 
+// Nearest open-ground tile to the middle of the map - where the free white Line
+// Laser starts, so it never spawns stranded on the road.
+function findLaserStart(blocked: Set<string>): { x: number; y: number } {
+  const c0 = Math.floor(GRID_COLS / 2);
+  const r0 = Math.floor(GRID_ROWS / 2);
+  for (let rad = 0; rad < Math.max(GRID_COLS, GRID_ROWS); rad++) {
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        const c = c0 + dc;
+        const r = r0 + dr;
+        if (c >= 0 && c < GRID_COLS && r >= 0 && r < GRID_ROWS && isBuildable(c, r, blocked)) {
+          return { x: c, y: r };
+        }
+      }
+    }
+  }
+  return { x: c0, y: r0 };
+}
+
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
 
@@ -420,7 +439,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     // the free white Line Laser also needs to exist on the very first board (stage 1);
     // resetBoard covers restarts and later stages
     if (!towers.current.some((t) => t.type === "roamer")) {
-      const rc = { x: Math.floor(GRID_COLS / 2), y: Math.floor(GRID_ROWS / 2) };
+      const rc = findLaserStart(blockedRef.current);
       towers.current.push({
         id: nextTowerId.current++,
         type: "roamer",
@@ -481,8 +500,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     projectiles.current = [];
     time.current = 0;
     nextTowerId.current = 1;
-    // one free white Line Laser per board, placed mid-map (reposition it anytime)
-    const rc = { x: Math.floor(GRID_COLS / 2), y: Math.floor(GRID_ROWS / 2) };
+    // one free white Line Laser per board, on open ground (reposition it anytime)
+    const rc = findLaserStart(blockedRef.current);
     towers.current.push({
       id: nextTowerId.current++,
       type: "roamer",
@@ -993,8 +1012,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       if (drag.moved && ghost && canvas) {
         const { x: col, y: row } = ghost.cell;
         const t = towers.current.find((tw) => tw.id === drag.id);
-        const inBounds = col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS;
-        const place = () =>
+        const taken = towers.current.some(
+          (tw) => tw.id !== drag.id && tw.cell.x === col && tw.cell.y === row,
+        );
+        const openGround = isBuildable(col, row, blockedRef.current) && !taken;
+        const place = () => {
+          t!.cell = { x: col, y: row };
+          if (t!.type === "roamer") t!.pos = { x: col, y: row };
+          playUpgrade();
           setSelected({
             id: t!.id,
             type: t!.type,
@@ -1002,26 +1027,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             left: canvas.offsetLeft + (col + 0.5) * cell,
             top: canvas.offsetTop + row * cell,
           });
-        if (t && t.type === "roamer") {
-          // the white laser drops anywhere on the board (its row = its beam line)
-          if (inBounds) {
-            t.cell = { x: col, y: row };
-            t.pos = { x: col, y: row };
-            playUpgrade();
-            place();
-          }
-        } else if (t) {
-          const taken = towers.current.some(
-            (tw) => tw.id !== drag.id && tw.cell.x === col && tw.cell.y === row,
-          );
-          if (isBuildable(col, row, blockedRef.current) && !taken) {
-            t.cell = { x: col, y: row };
-            playUpgrade();
-            place();
-          } else {
-            flash("Drop on an open tile");
-          }
-        }
+        };
+        // both the laser and normal towers drop only on open ground (never the road)
+        if (t && openGround) place();
+        else if (t) flash(t.type === "roamer" ? "Not on the road" : "Drop on an open tile");
       }
       return;
     }
@@ -1078,21 +1087,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     const row = Math.floor(fy);
     const onRoad = !isBuildable(col, row, blockedRef.current);
 
-    // HOLD-TO-NUKE: press and hold the road for ~3s to drop the one-per-game strike
-    // right there (no more tapping the base). A quick tap on the road just closes
-    // the menu - handled on pointer-up once the hold is aborted.
-    if (onRoad && !nukeUsed && !nukeTargetRef.current) {
-      startNukeHold(fx - 0.5, fy - 0.5);
-      return;
-    }
-
-    // the roamer isn't on a fixed cell - select it by tapping near its live spot
+    // the white Line Laser is special - grab it FIRST, before the road/nuke-hold
+    // check, so you can pick it up and drag it ANY time (even mid-wave) even when it
+    // happens to be sitting on a road tile
     const tapTile = { x: fx - 0.5, y: fy - 0.5 };
     const roamer = towers.current.find(
       (t) =>
         t.type === "roamer" &&
         t.pos !== undefined &&
-        Math.hypot(t.pos.x - tapTile.x, t.pos.y - tapTile.y) < 0.7,
+        Math.hypot(t.pos.x - tapTile.x, t.pos.y - tapTile.y) < 0.8,
     );
     if (roamer && roamer.pos) {
       setSelected({
@@ -1102,8 +1105,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         left: canvas.offsetLeft + (roamer.pos.x + 0.5) * cell,
         top: canvas.offsetTop + roamer.pos.y * cell,
       });
-      // the white laser is special: pick it up and drag it anywhere, ANY time (even
-      // mid-wave), not just the grace period
       dragRef.current = {
         id: roamer.id,
         type: roamer.type,
@@ -1114,6 +1115,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       };
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       closeMenu();
+      return;
+    }
+
+    // HOLD-TO-NUKE: press and hold the road for ~3s to drop the one-per-game strike
+    // right there (no more tapping the base). A quick tap on the road just closes
+    // the menu - handled on pointer-up once the hold is aborted.
+    if (onRoad && !nukeUsed && !nukeTargetRef.current) {
+      startNukeHold(fx - 0.5, fy - 0.5);
       return;
     }
 

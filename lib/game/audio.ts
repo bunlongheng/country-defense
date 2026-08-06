@@ -113,10 +113,12 @@ const SHOOT: Record<TowerType, () => void> = {
     blip(120, 0.22, "sine", 0.6, 320);
     noise(0.1, 0.14, 500);
   },
-  // the Frost Rover: a crisp icy shard on top of a watery spray
+  // the white Line Laser: a blazing sci-fi beam - a bright descending zap over a
+  // gritty underlayer and a searing sizzle, so the full-screen shot really lands
   roamer: () => {
-    blip(1040, 0.09, "sine", 0.3, 320);
-    noise(0.06, 0.12, 2600);
+    blip(2000, 0.26, "sawtooth", 0.45, 240);
+    blip(1200, 0.2, "square", 0.22, 300);
+    noise(0.14, 0.24, 3200);
   },
 };
 

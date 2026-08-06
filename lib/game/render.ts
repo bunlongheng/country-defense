@@ -632,23 +632,17 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   // towers (the white Line Laser draws at its free position, not a fixed cell)
   for (const t of s.towers) {
     const p = toPx(t.pos ?? t.cell, cell);
-    if (t.id === s.selectedId) {
+    // the roamer's beam is directional (aimed at a foe), so it has no static range ring
+    if (t.id === s.selectedId && t.type !== "roamer") {
+      const stats = towerStats(t.type, t.level);
       const def = TOWER_DEFS[t.type];
-      if (t.type === "roamer") {
-        // the laser's reach is its whole row - show a beam band, not a range circle
-        const band = cell * 0.55;
-        ctx.fillStyle = hexA(def.color, 0.14);
-        ctx.fillRect(0, p.y - band, cell * GRID_COLS, band * 2);
-      } else {
-        const stats = towerStats(t.type, t.level);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
-        ctx.fillStyle = hexA(def.color, 0.08);
-        ctx.fill();
-        ctx.strokeStyle = hexA(def.color, 0.5);
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
+      ctx.fillStyle = hexA(def.color, 0.08);
+      ctx.fill();
+      ctx.strokeStyle = hexA(def.color, 0.5);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
     drawTower(ctx, p, cell, t, s.code, s.time);
   }
@@ -657,12 +651,8 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   if (s.preview) {
     const p = toPx(s.preview.cell, cell);
     const def = TOWER_DEFS[s.preview.type];
-    if (s.preview.type === "roamer") {
-      // dragging the laser: preview the beam row it will rake, not a range circle
-      const band = cell * 0.55;
-      ctx.fillStyle = hexA(def.color, 0.16);
-      ctx.fillRect(0, p.y - band, cell * GRID_COLS, band * 2);
-    } else {
+    // no range ring for the roamer (its beam is directional); just the drop-tile ghost
+    if (s.preview.type !== "roamer") {
       const stats = towerStats(s.preview.type, 1);
       ctx.beginPath();
       ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
@@ -1693,15 +1683,18 @@ function drawShot(
       break;
     }
     case "roamer": {
-      // a white LINE LASER raked straight across the row: soft glow + bright core
+      // a white LINE LASER raked straight across the row: a wide soft glow, a bright
+      // core, and a white-hot centre. It blazes then fades over its life (pr.ttl),
+      // so it lingers as a real beam instead of a one-frame flash.
+      const f = Math.min(1, pr.ttl / 0.35);
       ctx.lineCap = "round";
-      ctx.strokeStyle = "rgba(200,225,255,0.28)";
-      ctx.lineWidth = lw * 0.45 * pr.scale;
+      ctx.strokeStyle = `rgba(200,225,255,${0.32 * f})`;
+      ctx.lineWidth = lw * 0.55 * pr.scale;
       line(ctx, a, b);
-      ctx.strokeStyle = "rgba(230,244,255,0.9)";
-      ctx.lineWidth = lw * 0.16 * pr.scale;
+      ctx.strokeStyle = `rgba(230,244,255,${0.9 * f})`;
+      ctx.lineWidth = lw * 0.18 * pr.scale;
       line(ctx, a, b);
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = `rgba(255,255,255,${f})`;
       ctx.lineWidth = lw * 0.06;
       line(ctx, a, b);
       break;

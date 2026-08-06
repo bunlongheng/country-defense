@@ -95,27 +95,42 @@ export function fireTowers(
   for (const tower of towers) {
     tower.cooldown -= dt;
 
-    // the white LINE LASER: a stationary special tank that fires a beam straight
-    // across the whole screen at its own row, hitting every enemy in that horizontal
-    // band at once. No target picking, no aiming - it just rakes its line.
+    // the white LINE LASER: a stationary special tank that fires a straight beam
+    // FROM its barrel, out toward the enemy it faces, all the way across the whole
+    // map (any direction - it can be diagonal). Every foe along that forward ray takes
+    // the hit; nothing behind the tank is touched.
     if (tower.type === "roamer") {
       const c = towerCenter(tower);
-      tower.aim = 0; // barrel points along the beam (to the right)
-      if (tower.cooldown > 0) continue;
+      const target = pickTarget(tower, enemies); // its range spans the map, so any foe
+      if (target) {
+        tower.aim = Math.atan2(target.pos.y - c.y, target.pos.x - c.x);
+      } else if (entry) {
+        tower.aim = Math.atan2(entry.y - c.y, entry.x - c.x);
+      }
+      if (tower.cooldown > 0 || !target) continue;
       const rs = towerStats(tower.type, tower.level);
       tower.cooldown = 1 / rs.fireRate;
-      const BAND = 0.55; // beam half-height, in tiles
+      const ang = tower.aim ?? 0;
+      const dx = Math.cos(ang);
+      const dy = Math.sin(ang);
+      const BAND = 0.5; // how close to the beam line a foe must be to be hit
       for (const e of enemies) {
-        if (e.hp > 0 && Math.abs(e.pos.y - c.y) <= BAND) applyHit(e, rs.damage, 0, time);
+        if (e.hp <= 0) continue;
+        const ex = e.pos.x - c.x;
+        const ey = e.pos.y - c.y;
+        const along = ex * dx + ey * dy; // distance along the beam (forward = +)
+        if (along < -0.3) continue; // only foes IN FRONT of the barrel, never behind
+        if (Math.abs(ex * -dy + ey * dx) <= BAND) applyHit(e, rs.damage, 0, time);
       }
-      // a full-width white beam tracer across the row (the canvas clips it to edges)
+      // the beam: from the barrel muzzle out to well past the map edge, so it reads as
+      // a full-length ray. A long ttl lets it linger as a blaze, not a one-frame flash.
       projectiles.push({
         id: projId,
-        from: { x: -2, y: c.y },
-        to: { x: 200, y: c.y },
-        targetId: -1,
+        from: { x: c.x + dx * 0.55, y: c.y + dy * 0.55 },
+        to: { x: c.x + dx * 60, y: c.y + dy * 60 },
+        targetId: target.id,
         type: "roamer",
-        ttl: 0.12,
+        ttl: 0.35,
         jitter: boltJitter(projId++),
         scale: 1 + (tower.level - 1) * 0.15,
       });

@@ -743,6 +743,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       el.style.top = `${oy + cy - size / 2}px`;
       const over = phaseRef.current === "won" || phaseRef.current === "lost";
       el.style.opacity = over ? "0" : "1"; // the game-over overlay owns the death visual
+      el.style.filter = pausedRef.current ? "grayscale(1)" : "none"; // match the frozen map
     };
 
     const frame = (now: number) => {
@@ -1269,6 +1270,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const togglePause = () => {
     pausedRef.current = !pausedRef.current;
     setPaused(pausedRef.current);
+    // the music pauses with the game and resumes when you unpause
+    if (pausedRef.current) stopGameMusic();
+    else startGameMusic();
   };
 
   // ---- gamepad: play the whole game with a Bluetooth controller ----------
@@ -1557,6 +1561,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             className={`block touch-none rounded-2xl ring-1 ring-white/10 ${
               nukeArmed ? "cursor-crosshair" : ""
             }`}
+            // paused -> the whole map drains to grayscale so it's obviously frozen
+            style={{ filter: paused ? "grayscale(1) brightness(0.85)" : undefined, transition: "filter 0.25s" }}
           />
 
           {/* the home base's real 3D flag marble (same one as the country select),
@@ -1615,14 +1621,28 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               on stays open in the middle so it is never covered) */}
           {menu && (
             <>
-              {/* dim + blur the arena behind the menu so the petals are easy to read
-                  even over a tank or the road, and a tap out here closes it */}
+              {/* a transparent tap-catcher to close on an outside tap - NO full-screen
+                  blackout (that flashing on every open/close was jarring) */}
               <button
                 aria-label="Close tower menu"
                 onPointerDown={closeMenu}
-                className="absolute inset-0 z-20 cursor-default bg-black/75 backdrop-blur-[3px]"
+                className="absolute inset-0 z-20 cursor-default"
               />
               <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
+                {/* a soft darkening ONLY around the ring so the petals read clearly,
+                    while the rest of the map stays fully visible */}
+                <div
+                  className="pointer-events-none absolute rounded-full"
+                  style={{
+                    left: 0,
+                    top: 0,
+                    transform: "translate(-50%, -50%)",
+                    width: menu.step * 3.1,
+                    height: menu.step * 3.1,
+                    background:
+                      "radial-gradient(circle, rgba(0,0,0,0.5) 34%, rgba(0,0,0,0.28) 54%, transparent 72%)",
+                  }}
+                />
                 {/* the placement spot marker - sits on the REAL tapped tile even
                     when the ring has been shifted inward to stay on-screen */}
                 <div

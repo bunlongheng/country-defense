@@ -164,9 +164,8 @@ const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
 // Radial build menu: the 8 towers sit on a ring around the tapped tile, forming
 // a donut with the placement spot open in the middle (tap outside or Esc to
-// close). MENU_STEP is the ring radius; MENU_AROUND holds unit-circle offsets,
-// clockwise from the top.
-const MENU_STEP = 110; // ring radius - spread the petals out so they're easy to aim at
+// close). The ring radius is computed per-open (responsive + edge-clamped);
+// MENU_AROUND holds unit-circle offsets, clockwise from the top.
 const MENU_AROUND: [number, number][] = Array.from({ length: 8 }, (_, i) => {
   const a = -Math.PI / 2 + (i * Math.PI * 2) / 8;
   return [Math.cos(a), Math.sin(a)];
@@ -278,8 +277,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [menu, setMenu] = useState<{
     col: number;
     row: number;
-    left: number;
+    left: number; // ring centre (clamped inside the arena so no petal goes off-screen)
     top: number;
+    step: number; // ring radius (tighter on phones)
+    dotX: number; // offset of the real placement tile from the ring centre
+    dotY: number;
   } | null>(null);
   // display copy of the selected tower (+ its on-screen position so the upgrade
   // panel can sit right next to the tapped tower); the live tower lives in the ref
@@ -912,13 +914,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       closeMenu();
       return;
     }
-    // open the honeycomb centered on the tapped tile (coords within the arena wrapper)
-    setMenu({
-      col,
-      row,
-      left: canvas.offsetLeft + col * cell + cell / 2,
-      top: canvas.offsetTop + row * cell + cell / 2,
-    });
+    // open the radial menu centred on the tapped tile, but keep the whole ring
+    // inside the arena so no petal falls off-screen (esp. edge/corner tiles on a
+    // phone). The ring is tighter on small screens.
+    const step = Math.round(Math.max(74, Math.min(110, cell * 2)));
+    const margin = step + 30; // ring radius + half a petal + breathing room
+    const parent = canvas.parentElement!;
+    const rawX = canvas.offsetLeft + col * cell + cell / 2;
+    const rawY = canvas.offsetTop + row * cell + cell / 2;
+    const clamp = (v: number, lo: number, hi: number) =>
+      lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi);
+    const left = clamp(rawX, margin, parent.clientWidth - margin);
+    const top = clamp(rawY, margin, parent.clientHeight - margin);
+    setMenu({ col, row, left, top, step, dotX: rawX - left, dotY: rawY - top });
     previewRef.current = null;
   };
 
@@ -1160,28 +1168,28 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
       >
         {/* stage + wave + auto-start countdown - uniform white, same font/weight */}
-        <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Stage">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Stage">
           S{stage + 1}/{TOTAL_STAGES}
-          <span className="hidden font-black text-white/55 sm:inline">· {STAGES[stage].name}</span>
+          <span className="hidden font-medium text-white/55 sm:inline">· {STAGES[stage].name}</span>
         </span>
-        <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Wave">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Wave">
           <Icon.Wave />
           {wave}/{TOTAL_WAVES}
           {phase === "ready" && countdown !== null && (
-            <span className="font-black text-white/70">· {countdown}s</span>
+            <span className="font-medium text-white/70">· {countdown}s</span>
           )}
         </span>
         {/* gold + terminated */}
         <div className="flex items-center gap-3 sm:gap-4">
-          <span className="flex items-center gap-1.5 text-sm font-black text-amber-300 sm:text-base" title="Gold">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-300 sm:text-base" title="Gold">
             <Icon.Coin />
             {gold}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Terminated">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Terminated">
             <Icon.Skull />
             {kills}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Score">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Score">
             <Trophy className={IC} />
             {score.toLocaleString()}
           </span>
@@ -1197,7 +1205,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           </button>
           <button
             onClick={cycleSpeed}
-            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-black text-white active:scale-95"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-medium text-white active:scale-95"
             aria-label={`Game speed ${speed} times, tap to change`}
           >
             {speed}x
@@ -1211,7 +1219,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             {paused ? <Icon.Play /> : <Icon.Pause />}
           </button>
           <div className="flex items-center gap-1.5">
-            <span className="max-w-[8rem] truncate text-sm font-black text-white/90 sm:text-base">
+            <span className="max-w-[8rem] truncate text-sm font-medium text-white/90 sm:text-base">
               {country.name}
             </span>
             <div
@@ -1355,10 +1363,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                 className="absolute inset-0 z-20 cursor-default"
               />
               <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
-                {/* center: the placement spot (non-interactive, kept clear) */}
+                {/* the placement spot marker - sits on the REAL tapped tile even
+                    when the ring has been shifted inward to stay on-screen */}
                 <div
                   className="pointer-events-none absolute h-[46px] w-[46px] rounded-full border-2 border-dashed border-white/70"
-                  style={{ left: 0, top: 0, transform: "translate(-50%, -50%)" }}
+                  style={{ left: menu.dotX, top: menu.dotY, transform: "translate(-50%, -50%)" }}
                 />
                 {TOWER_ORDER.map((type, i) => {
                   const [ox, oy] = MENU_AROUND[i];
@@ -1380,8 +1389,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                       title={`${d.name} - $${d.cost}`}
                       className="absolute flex h-[54px] w-[54px] flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
                       style={{
-                        left: ox * MENU_STEP,
-                        top: oy * MENU_STEP,
+                        left: ox * menu.step,
+                        top: oy * menu.step,
                         transform: "translate(-50%, -50%)",
                         borderColor: d.color,
                         background: `radial-gradient(circle at 40% 30%, ${d.color}33, #0b0d12 88%)`,

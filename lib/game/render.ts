@@ -1538,7 +1538,9 @@ function drawShot(
       const px = a.x + (b.x - a.x) * prog;
       const py = a.y + (b.y - a.y) * prog;
       if (sprite) {
-        const sz = s * 0.7;
+        // match the cannon fireball's size (s*0.28 radius) so shots read consistently;
+        // s already carries pr.scale, so it grows +15%/level like every other shot
+        const sz = s * 0.3;
         ctx.strokeStyle = "rgba(132,204,22,0.35)"; // faint goo trail
         ctx.lineWidth = lw * 0.1;
         line(ctx, a, { x: px, y: py });

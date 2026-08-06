@@ -966,7 +966,34 @@ export function drawTower(
     ctx.fill();
   }
 
-  // armor MOUNTING PLATE: a rounded-square platform (not just a flat disc) in the
+  // caterpillar tracks flanking the hull so the turret reads as a little tank -
+  // two dark tread strips that poke out front and back, with rungs across them
+  const trkW = R * 0.5;
+  const trkH = R * 2.4;
+  for (const side of [-1, 1] as const) {
+    const tx = p.x + side * R * 0.92;
+    const tg = ctx.createLinearGradient(tx - trkW / 2, 0, tx + trkW / 2, 0);
+    tg.addColorStop(0, "#111318");
+    tg.addColorStop(0.5, "#39414d");
+    tg.addColorStop(1, "#111318");
+    roundRect(ctx, tx - trkW / 2, p.y - trkH / 2, trkW, trkH, trkW * 0.42);
+    ctx.fillStyle = tg;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, R * 0.05);
+    ctx.strokeStyle = "#08090c";
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; // tread rungs
+    ctx.lineWidth = Math.max(1, R * 0.07);
+    for (let i = 1; i < 6; i++) {
+      const yy = p.y - trkH / 2 + (trkH / 6) * i;
+      ctx.beginPath();
+      ctx.moveTo(tx - trkW * 0.42, yy);
+      ctx.lineTo(tx + trkW * 0.42, yy);
+      ctx.stroke();
+    }
+  }
+
+  // armor MOUNTING PLATE: a rounded-square hull (not just a flat disc) in the
   // nation's colour, with a beveled rim, an inset panel and four corner bolts, so
   // the turret reads as mounted hardware
   const plate = R * 1.02; // half-size of the plate
@@ -1071,13 +1098,17 @@ export function drawTower(
   } else if (t.type === "slime") {
     drawSlimeEmblem(ctx, p.x, p.y, cell * 0.34);
   } else if (t.type === "sniper") {
-    drawSniperEmblem(ctx, p.x, p.y, cell * 0.34);
+    drawSniperEmblem(ctx, p.x, p.y, R * 1.0);
+  } else if (t.type === "frost") {
+    drawSnowflake(ctx, p.x, p.y, R * 1.0);
+  } else if (t.type === "tesla") {
+    drawBolt(ctx, p.x, p.y, R * 1.05);
+  } else if (t.type === "rapid") {
+    drawStar(ctx, p.x, p.y, R * 1.0);
+  } else if (t.type === "laser") {
+    drawTargetDot(ctx, p.x, p.y, R * 0.95);
   } else {
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = `${Math.round(cell * 0.3)}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(def.icon, p.x, p.y + 1);
+    drawDot(ctx, p.x, p.y, R * 0.7); // cannon
   }
 
   // The tower earns a waving national flag from level 3 up, growing each level:
@@ -1131,6 +1162,91 @@ function drawSniperEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number,
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.beginPath();
   ctx.arc(cx, cy, r * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// White vector emblems, drawn dead-centre on the dome (no emoji, no border), so
+// every tower reads by a clean white glyph on its colour-coded glossy dome.
+const WHITE = "rgba(255,255,255,0.95)";
+
+function drawSnowflake(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.5;
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = Math.max(1.2, s * 0.08);
+  ctx.lineCap = "round";
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + dx * r, cy + dy * r);
+    ctx.stroke();
+    // two little branches per spoke
+    const px = -dy;
+    const py = dx;
+    for (const at of [0.5, 0.78]) {
+      const bx = cx + dx * r * at;
+      const by = cy + dy * r * at;
+      const bl = r * 0.24;
+      ctx.beginPath();
+      ctx.moveTo(bx - px * bl - dx * bl * 0.6, by - py * bl - dy * bl * 0.6);
+      ctx.lineTo(bx, by);
+      ctx.lineTo(bx + px * bl - dx * bl * 0.6, by + py * bl - dy * bl * 0.6);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawBolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const w = s * 0.5;
+  const h = s * 0.62;
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.moveTo(cx + w * 0.18, cy - h * 0.5);
+  ctx.lineTo(cx - w * 0.5, cy + h * 0.1);
+  ctx.lineTo(cx - w * 0.06, cy + h * 0.1);
+  ctx.lineTo(cx - w * 0.22, cy + h * 0.5);
+  ctx.lineTo(cx + w * 0.5, cy - h * 0.12);
+  ctx.lineTo(cx + w * 0.04, cy - h * 0.12);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const R2 = s * 0.5;
+  const r2 = s * 0.19;
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const rad = i % 2 === 0 ? R2 : r2;
+    const x = cx + Math.cos(a) * rad;
+    const y = cy + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawTargetDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.42;
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = Math.max(1.2, s * 0.1);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.34, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.arc(cx, cy, s * 0.42, 0, Math.PI * 2);
   ctx.fill();
 }
 

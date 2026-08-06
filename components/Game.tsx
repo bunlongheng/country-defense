@@ -340,6 +340,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
   const goldRef = useRef(START_GOLD);
   const livesRef = useRef(START_LIVES);
+  // one-time base shield: soaks the first invader that reaches the base for free
+  // (no life lost), then pops - so the base survives 11 leaks instead of 10. The
+  // white wavy bubble shows while it's up; the health bar hides until it pops.
+  const shieldRef = useRef(true);
+  const [shieldUp, setShieldUp] = useState(true);
   const waveRef = useRef(1);
   const selectedIdRef = useRef<number | null>(null);
   const buildTypeRef = useRef<TowerType | null>("laser");
@@ -448,6 +453,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     seedRef.current = Math.floor(Math.random() * pool.current.length);
     goldRef.current = START_GOLD;
     livesRef.current = START_LIVES;
+    shieldRef.current = true; // fresh shield each run
+    setShieldUp(true);
     waveRef.current = 1;
     killsRef.current = 0;
     setKills(0);
@@ -548,7 +555,16 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       const moved = moveEnemies(enemies.current, dt, time.current, pathLenRef.current, waypointsRef.current);
       enemies.current = moved.survivors;
       if (moved.leaked > 0) {
-        livesRef.current = Math.max(0, livesRef.current - moved.leaked);
+        let leak = moved.leaked;
+        if (shieldRef.current) {
+          // the shield eats the first invader for free, then shatters
+          shieldRef.current = false;
+          setShieldUp(false);
+          leak -= 1;
+          spawnExplosion(particlesRef.current, baseRef.current.x, baseRef.current.y - 0.2, "#a5f3fc");
+          spawnExplosion(particlesRef.current, baseRef.current.x, baseRef.current.y - 0.2, "#ffffff");
+        }
+        if (leak > 0) livesRef.current = Math.max(0, livesRef.current - leak);
         playLeak();
       }
       const fired = fireTowers(towers.current, enemies.current, dt, time.current, waypointsRef.current[0]);
@@ -700,6 +716,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           pathSet: pathCellsRef.current,
           noBuild: noBuildRef.current,
           baseCell: baseRef.current,
+          shield: shieldRef.current,
         });
         positionBase(now);
         raf = requestAnimationFrame(frame);
@@ -1395,7 +1412,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           {/* left/top/size are set imperatively each frame (positionBase); keeping
               them OUT of the JSX style stops React re-renders from resetting them */}
           <div ref={baseMarbleRef} className="pointer-events-none absolute left-0 top-0 z-10 h-0 w-0">
-            <FlagMarble3D code={code} />
+            <FlagMarble3D code={code} shield={shieldUp} />
           </div>
 
           {/* wave (bottom-left) + score (bottom-right) - split to the corners */}

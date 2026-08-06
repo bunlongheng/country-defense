@@ -33,6 +33,7 @@ export interface DrawState {
   pathSet?: Set<string>; // path + no-build tiles (drives the build-pad layout)
   noBuild?: Set<string>; // extra blocked tiles (water / lava), drawn themed
   baseCell?: Vec2; // where the home base sits (end of the path)
+  shield?: boolean; // base shield still up? (hides the health bar, shows the bubble)
 }
 
 // One global sun direction so every dome, marble and mountain is lit the same way.
@@ -564,7 +565,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // home base: a spinning flag sphere floating above a cool themed pedestal.
   // As it loses lives it reddens, then smokes, then catches fire.
-  drawBase(ctx, toPx(s.baseCell ?? BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives);
+  drawBase(ctx, toPx(s.baseCell ?? BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives, s.shield ?? false);
 
   // enemies
   for (const e of s.enemies) {
@@ -1769,6 +1770,7 @@ function drawBase(
   palette: string[],
   time: number,
   hurt: number, // fraction of lives lost, 0 (pristine) .. 1 (dead)
+  shield: boolean, // shield up -> hide the health bar (the bubble shows instead)
 ) {
   const accent = palette[0] ?? "#38bdf8";
   const r = cell * 0.4;
@@ -1886,9 +1888,10 @@ function drawBase(
   if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.75 ? 2 : 1, time, 0);
 
   // health bar above the base (ticks down as invaders leak) - hidden once the
-  // base is destroyed, an empty bar there is just noise
+  // base is destroyed, and hidden while the shield is up (the bubble stands in
+  // for it, and no health has been spent yet)
   const frac = Math.max(0, 1 - hurt);
-  if (frac > 0.001) {
+  if (frac > 0.001 && !shield) {
     const bw = r * 2.1;
     const bh = Math.max(4, cell * 0.07);
     const by = cy - r - cell * 0.24;

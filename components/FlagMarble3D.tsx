@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Environment, Lightformer } from "@react-three/drei";
 import * as THREE from "three";
@@ -82,6 +82,59 @@ function Studio() {
   );
 }
 
+// A white, see-through, glossy shield bubble that waves gently around the base
+// marble - a fresnel rim (bright at the edges) plus a soft time-shimmer, with a
+// low-frequency ripple displacing the surface so it looks like a living bubble.
+const SHIELD_VERT = `
+  uniform float uTime;
+  varying vec3 vN;
+  varying vec3 vView;
+  void main() {
+    vec3 p = position;
+    float w = sin(p.y * 6.0 + uTime * 3.0) * 0.02 + sin(p.x * 5.0 - uTime * 2.0) * 0.02;
+    p += normal * w;
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    vN = normalize(normalMatrix * normal);
+    vView = normalize(-mv.xyz);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const SHIELD_FRAG = `
+  uniform float uTime;
+  varying vec3 vN;
+  varying vec3 vView;
+  void main() {
+    float fres = pow(1.0 - max(dot(vN, vView), 0.0), 2.5);
+    float band = 0.06 + 0.05 * sin(uTime * 4.0);
+    float a = fres * 0.72 + band;
+    gl_FragColor = vec4(vec3(1.0), a);
+  }
+`;
+
+function ShieldBubble() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+  const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
+  useFrame((_, dt) => {
+    if (matRef.current) matRef.current.uniforms.uTime.value += dt;
+    if (meshRef.current) meshRef.current.rotation.y += dt * 0.25;
+  });
+  return (
+    <mesh ref={meshRef} scale={1.16}>
+      <sphereGeometry args={[1, 48, 48]} />
+      <shaderMaterial
+        ref={matRef}
+        uniforms={uniforms}
+        vertexShader={SHIELD_VERT}
+        fragmentShader={SHIELD_FRAG}
+        transparent
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 let webglSupport: boolean | undefined;
 function hasWebGL(): boolean {
   if (webglSupport !== undefined) return webglSupport;
@@ -95,7 +148,13 @@ function hasWebGL(): boolean {
 }
 const noopSubscribe = () => () => {};
 
-export default function FlagMarble3D({ code }: { code: string }) {
+export default function FlagMarble3D({
+  code,
+  shield = false,
+}: {
+  code: string;
+  shield?: boolean;
+}) {
   // Client-only capability check, hydration-safe (server sees false, so it and
   // the 2D fallback render match on the first paint before WebGL takes over).
   const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => false);
@@ -110,6 +169,7 @@ export default function FlagMarble3D({ code }: { code: string }) {
     >
       <Studio />
       <Sphere code={code} />
+      {shield && <ShieldBubble />}
       <OrbitControls
         enablePan={false}
         enableZoom={false}

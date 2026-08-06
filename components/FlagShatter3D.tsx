@@ -242,6 +242,188 @@ function Egg({ code }: { code: string }) {
   return <primitive object={groupRef.current} />;
 }
 
+// ---- fire ---------------------------------------------------------------
+// A GLSL particle fire rising from the wreckage: soft additive puffs that are
+// white-hot at the base and cool to orange then smoky red as they rise and fade.
+const FIRE_COUNT = 64;
+
+const FIRE_VERT = `
+  attribute float aSize;
+  attribute float aAlpha;
+  attribute vec3 aColor;
+  varying float vAlpha;
+  varying vec3 vColor;
+  void main() {
+    vAlpha = aAlpha;
+    vColor = aColor;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * (260.0 / -mv.z);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const FIRE_FRAG = `
+  uniform sampler2D uMap;
+  varying float vAlpha;
+  varying vec3 vColor;
+  void main() {
+    float a = texture2D(uMap, gl_PointCoord).a * vAlpha;
+    if (a < 0.01) discard;
+    gl_FragColor = vec4(vColor, a);
+  }
+`;
+
+type FireState = {
+  points: THREE.Points;
+  vel: Float32Array;
+  life: Float32Array;
+  maxLife: Float32Array;
+  base: Float32Array;
+  pos: THREE.BufferAttribute;
+  color: THREE.BufferAttribute;
+  size: THREE.BufferAttribute;
+  alpha: THREE.BufferAttribute;
+};
+
+function makeFireTexture(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, "rgba(255,255,255,1)");
+  grd.addColorStop(0.35, "rgba(255,255,255,0.55)");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+function resetFire(st: FireState, i: number) {
+  const p = st.pos.array as Float32Array;
+  const a = Math.random() * Math.PI * 2;
+  const rad = Math.random() * 0.3;
+  p[i * 3] = Math.cos(a) * rad;
+  p[i * 3 + 1] = FLOOR + 0.08 + Math.random() * 0.22; // ignite at the pile
+  p[i * 3 + 2] = Math.sin(a) * rad * 0.55;
+  st.vel[i * 3] = (Math.random() - 0.5) * 0.22;
+  st.vel[i * 3 + 1] = 0.85 + Math.random() * 0.9; // rise
+  st.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.22;
+  st.life[i] = 0;
+  st.maxLife[i] = 0.5 + Math.random() * 0.6;
+  st.base[i] = 0.5 + Math.random() * 0.55;
+}
+
+// white-hot base -> yellow -> orange -> smoky red as the flame ages (rises)
+function fireColor(col: Float32Array, i: number, f: number) {
+  let r: number, g: number, b: number;
+  if (f < 0.3) {
+    const k = f / 0.3;
+    r = 1;
+    g = 0.95 - 0.15 * k;
+    b = 0.75 - 0.55 * k;
+  } else if (f < 0.65) {
+    const k = (f - 0.3) / 0.35;
+    r = 1;
+    g = 0.8 - 0.45 * k;
+    b = 0.2 - 0.15 * k;
+  } else {
+    const k = (f - 0.65) / 0.35;
+    r = 1 - 0.4 * k;
+    g = 0.35 - 0.3 * k;
+    b = 0.05 * (1 - k);
+  }
+  col[i * 3] = r;
+  col[i * 3 + 1] = g;
+  col[i * 3 + 2] = b;
+}
+
+function buildFire(): FireState {
+  const geo = new THREE.BufferGeometry();
+  const pos = new THREE.BufferAttribute(new Float32Array(FIRE_COUNT * 3), 3);
+  const color = new THREE.BufferAttribute(new Float32Array(FIRE_COUNT * 3), 3);
+  const size = new THREE.BufferAttribute(new Float32Array(FIRE_COUNT), 1);
+  const alpha = new THREE.BufferAttribute(new Float32Array(FIRE_COUNT), 1);
+  const st: FireState = {
+    points: null as unknown as THREE.Points,
+    vel: new Float32Array(FIRE_COUNT * 3),
+    life: new Float32Array(FIRE_COUNT),
+    maxLife: new Float32Array(FIRE_COUNT),
+    base: new Float32Array(FIRE_COUNT),
+    pos,
+    color,
+    size,
+    alpha,
+  };
+  for (let i = 0; i < FIRE_COUNT; i++) {
+    resetFire(st, i);
+    st.life[i] = Math.random() * st.maxLife[i]; // stagger so the flame is steady
+  }
+  geo.setAttribute("position", pos);
+  geo.setAttribute("aColor", color);
+  geo.setAttribute("aSize", size);
+  geo.setAttribute("aAlpha", alpha);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uMap: { value: makeFireTexture() } },
+    vertexShader: FIRE_VERT,
+    fragmentShader: FIRE_FRAG,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  st.points = points;
+  return st;
+}
+
+function Fire() {
+  const fireRef = useRef<FireState | null>(null);
+  if (!fireRef.current) fireRef.current = buildFire();
+  const tRef = useRef(0);
+
+  useEffect(() => {
+    const st = fireRef.current!;
+    return () => {
+      st.points.geometry.dispose();
+      (st.points.material as THREE.Material).dispose();
+    };
+  }, []);
+
+  useFrame((_, dtRaw) => {
+    const dt = Math.min(dtRaw, 0.033);
+    tRef.current += dt;
+    const st = fireRef.current!;
+    const active = tRef.current > HOLD * 0.9; // ignites once the shell cracks
+    const p = st.pos.array as Float32Array;
+    const col = st.color.array as Float32Array;
+    const sz = st.size.array as Float32Array;
+    const al = st.alpha.array as Float32Array;
+    for (let i = 0; i < FIRE_COUNT; i++) {
+      if (!active) {
+        al[i] = 0;
+        continue;
+      }
+      st.life[i] += dt;
+      if (st.life[i] >= st.maxLife[i]) resetFire(st, i);
+      p[i * 3] += st.vel[i * 3] * dt;
+      p[i * 3 + 1] += st.vel[i * 3 + 1] * dt;
+      p[i * 3 + 2] += st.vel[i * 3 + 2] * dt;
+      st.vel[i * 3 + 1] += 0.5 * dt; // buoyancy
+      const f = st.life[i] / st.maxLife[i];
+      const shape = Math.sin(Math.min(1, f) * Math.PI); // 0 -> 1 -> 0
+      sz[i] = st.base[i] * (0.35 + shape * 0.9);
+      al[i] = shape * 0.9;
+      fireColor(col, i, f);
+    }
+    st.pos.needsUpdate = true;
+    st.color.needsUpdate = true;
+    st.size.needsUpdate = true;
+    st.alpha.needsUpdate = true;
+  });
+
+  return <primitive object={fireRef.current.points} />;
+}
+
 let webglSupport: boolean | undefined;
 function hasWebGL(): boolean {
   if (webglSupport !== undefined) return webglSupport;
@@ -284,6 +466,7 @@ export default function FlagShatter3D({ code }: { code: string }) {
           <Lightformer form="rect" intensity={1} position={[0, -3, 2]} scale={[8, 3, 1]} color="#3a3a52" />
         </Environment>
         <Egg code={code} />
+        <Fire />
         <ContactShadows position={[0, FLOOR, 0]} opacity={0.5} scale={6} blur={2.4} far={3} />
       </Canvas>
     </div>

@@ -10,6 +10,7 @@ export interface ScoreEntry {
   stage: number; // stage reached (1-based)
   wave: number; // wave reached (1-based)
   country: string; // the defended country's name
+  code?: string; // flag code (for the tiny flag in the board; older rows lack it)
 }
 
 const KEY = "country-defense:scores";

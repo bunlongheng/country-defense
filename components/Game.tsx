@@ -112,29 +112,75 @@ function ScorePanel({
 }) {
   return (
     <div className="w-full max-w-xs rounded-xl bg-black/40 p-3 text-center ring-1 ring-white/10">
-      <div className="text-3xl font-black text-yellow-300">{r.final.toLocaleString()}</div>
+      <div className="text-3xl font-black text-white">{r.final.toLocaleString()}</div>
       <div className="text-[10px] font-bold uppercase tracking-widest text-white/45">Score</div>
       {r.isBest ? (
-        <div className="mt-1 text-sm font-black text-amber-300">🎉 New high score!</div>
+        <div className="mt-1 text-sm font-black text-white">🎉 New high score!</div>
       ) : (
-        <div className="mt-1 text-xs text-white/55">
-          Best {r.prevBest.toLocaleString()}
-        </div>
+        <div className="mt-1 text-xs text-white/55">Best {r.prevBest.toLocaleString()}</div>
       )}
       {r.board.length > 0 && (
         <div className="mt-3 space-y-1 text-left">
           {r.board.slice(0, 5).map((e, i) => (
             <div key={i} className="flex items-center gap-2 text-[11px]">
               <span className="w-3 text-white/35">{i + 1}</span>
+              {e.code ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={flagUrl(e.code)}
+                  alt=""
+                  className="h-3 w-4 shrink-0 rounded-[2px] object-cover ring-1 ring-white/20"
+                />
+              ) : (
+                <span className="h-3 w-4 shrink-0" />
+              )}
               <span className="flex-1 truncate text-white/75">{e.country}</span>
               <span className="text-white/35">{formatWhen(e.date)}</span>
-              <span className="w-12 text-right font-bold text-yellow-300">
+              <span className="w-12 text-right font-bold text-white">
                 {e.score.toLocaleString()}
               </span>
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// The defeated country's flag with a shattered-glass crack over it.
+function CrackedFlag({ code }: { code: string }) {
+  return (
+    <div className="relative h-24 w-32" style={{ animation: "popIn 0.5s ease-out" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={flagUrl(code)}
+        alt=""
+        className="h-full w-full rounded-md object-cover opacity-80 ring-1 ring-white/25"
+        style={{ filter: "grayscale(0.25) brightness(0.85)" }}
+      />
+      <svg viewBox="0 0 128 96" className="absolute inset-0 h-full w-full">
+        <g fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="2.4" strokeLinejoin="round">
+          <polyline points="64,46 40,18 31,0" />
+          <polyline points="64,46 92,16 128,7" />
+          <polyline points="64,46 98,60 128,52" />
+          <polyline points="64,46 72,82 62,96" />
+          <polyline points="64,46 28,66 0,74" />
+          <polyline points="64,46 18,38 0,28" />
+        </g>
+        <g fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.2" strokeLinejoin="round">
+          <polyline points="64,46 40,18 31,0" />
+          <polyline points="64,46 92,16 128,7" />
+          <polyline points="64,46 98,60 128,52" />
+          <polyline points="64,46 72,82 62,96" />
+          <polyline points="64,46 28,66 0,74" />
+          <polyline points="64,46 18,38 0,28" />
+          <polyline points="40,18 55,30" />
+          <polyline points="92,16 82,36" />
+          <polyline points="98,60 84,50" />
+          <polyline points="72,82 58,64" />
+          <polyline points="28,66 46,52" />
+        </g>
+      </svg>
     </div>
   );
 }
@@ -459,6 +505,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         stage: stageRef.current + 1,
         wave: waveRef.current,
         country: country?.name ?? code,
+        code,
       });
       setResult({ final, prevBest, isBest: final > prevBest, board });
     },
@@ -1169,31 +1216,20 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 sm:px-4 sm:py-3"
         style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
       >
-        {/* stage + wave + auto-start countdown - uniform white, same font/weight */}
+        {/* stage - white throughout, spelled out */}
         <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Stage">
-          S{stage + 1}/{TOTAL_STAGES}
-          <span className="hidden font-medium text-white/55 sm:inline">· {STAGES[stage].name}</span>
-        </span>
-        <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Wave">
-          <Icon.Wave />
-          {wave}/{TOTAL_WAVES}
-          {phase === "ready" && countdown !== null && (
-            <span className="font-medium text-white/70">· {countdown}s</span>
-          )}
+          Stage {stage + 1}/{TOTAL_STAGES}
+          <span className="hidden font-medium text-white/85 sm:inline">· {STAGES[stage].name}</span>
         </span>
         {/* gold + terminated */}
         <div className="flex items-center gap-3 sm:gap-4">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-300 sm:text-base" title="Gold">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-300 sm:text-base" title="Total gold">
             <Icon.Coin />
             {gold}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Terminated">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Total kills">
             <Icon.Skull />
             {kills}
-          </span>
-          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Score">
-            <Trophy className={IC} />
-            {score.toLocaleString()}
           </span>
         </div>
         {/* controls */}
@@ -1324,6 +1360,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               nukeArmed ? "cursor-crosshair" : ""
             }`}
           />
+
+          {/* wave (bottom-left) + score (bottom-right) - split to the corners */}
+          <div className="pointer-events-none absolute bottom-2 left-2 z-30 flex items-center gap-1.5 rounded-lg bg-black/45 px-2.5 py-1 text-sm font-medium text-white sm:text-base">
+            <Icon.Wave />
+            Wave {wave}/{TOTAL_WAVES}
+            {phase === "ready" && countdown !== null && (
+              <span className="text-white/70">· {countdown}s</span>
+            )}
+          </div>
+          <div className="pointer-events-none absolute bottom-2 right-2 z-30 flex items-center gap-1.5 rounded-lg bg-black/45 px-2.5 py-1 text-sm font-medium text-white sm:text-base">
+            <Trophy className={IC} />
+            {score.toLocaleString()}
+          </div>
 
           {/* nuke: giant 3-2-1 countdown + a blinding detonation flash */}
           <style>{`
@@ -1529,7 +1578,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           {/* defeat */}
           {phase === "lost" && (
             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-black/60 py-6">
-              <div className="text-5xl">💥</div>
+              <CrackedFlag code={code} />
               <div className="text-2xl font-black">{country.name} fell</div>
               <div className="text-sm text-white/60">
                 Stage {stage + 1}, wave {wave}

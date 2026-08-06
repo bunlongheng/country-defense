@@ -146,8 +146,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     icon: "—",
     cost: 0, // free - you start with one
     range: 30, // effectively the whole screen (the beam spans full width)
-    damage: 16, // per shot, to EVERY enemy in the beam's row
-    fireRate: 1.2,
+    damage: 16, // per shot, to EVERY enemy in the beam's line
+    fireRate: 0.6, // deliberately slow - it hits a whole line, so it can't also spam
     splash: 0,
     slow: 0,
     chain: 0,

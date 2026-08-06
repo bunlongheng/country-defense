@@ -245,7 +245,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const nukeTargetRef = useRef<{ x: number; y: number } | null>(null);
   const nukeAimRef = useRef<{ x: number; y: number } | null>(null); // pointer while aiming
   const nukeBlastRef = useRef<{ x: number; y: number; born: number } | null>(null); // warhead + cloud
-  const baseTapRef = useRef({ n: 0, t: 0 }); // secret: tap the base 5x to arm the nuke
+  const holdTimersRef = useRef<number[]>([]); // press-and-hold-the-road charge timers
   const [nukeUsed, setNukeUsed] = useState(false);
   const [nukeArmed, setNukeArmed] = useState(false);
   const [nukeCount, setNukeCount] = useState<number | null>(null); // 3/2/1 overlay
@@ -417,6 +417,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     nukeTargetRef.current = null;
     nukeAimRef.current = null;
     nukeBlastRef.current = null;
+    holdTimersRef.current.forEach((id) => window.clearTimeout(id));
+    holdTimersRef.current = [];
     setNukeUsed(false);
     setNukeArmed(false);
     setNukeCount(null);
@@ -500,7 +502,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         livesRef.current = Math.max(0, livesRef.current - moved.leaked);
         playLeak();
       }
-      const fired = fireTowers(towers.current, enemies.current, dt, time.current);
+      const fired = fireTowers(towers.current, enemies.current, dt, time.current, waypointsRef.current[0]);
       if (fired.projectiles.length) {
         projectiles.current.push(...fired.projectiles);
         // sound EACH distinct weapon that fired this frame (not just the first),
@@ -700,12 +702,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       flash(`Need $${cost}`);
       return false;
     }
+    // face the enemy entry by default so a fresh tower already watches the entrance
+    const entry = waypointsRef.current[0];
     towers.current.push({
       id: nextTowerId.current++,
       type,
       cell: { x: col, y: row },
       level: 1,
       cooldown: 0,
+      aim: Math.atan2(entry.y - row, entry.x - col),
     });
     spendGold(cost);
     playBuild(); // ka-ching
@@ -811,6 +816,46 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     flash("Tap where to nuke");
   }, [nukeUsed]);
 
+  // Press-and-hold the road for ~3s to call in the nuke right there. A short grace
+  // period means a quick tap (used to close the build menu) never triggers it.
+  const startNukeHold = useCallback(
+    (x: number, y: number) => {
+      const timers: number[] = [];
+      timers.push(
+        window.setTimeout(() => {
+          nukeTargetRef.current = { x, y }; // shows the charging portal + beam here
+          setNukeCount(3);
+          playNukeTick(3);
+          timers.push(window.setTimeout(() => { setNukeCount(2); playNukeTick(2); }, 850));
+          timers.push(window.setTimeout(() => { setNukeCount(1); playNukeTick(1); }, 1700));
+          timers.push(
+            window.setTimeout(() => {
+              setNukeUsed(true);
+              holdTimersRef.current = [];
+              launchNuke(); // warhead drops -> boom
+            }, 2550),
+          );
+        }, 350),
+      );
+      holdTimersRef.current = timers;
+    },
+    [launchNuke],
+  );
+
+  // Finger lifted: if a hold was still charging, abort it (and treat it as a quick
+  // tap = close the build menu).
+  const onCanvasUp = () => {
+    if (!holdTimersRef.current.length) return;
+    holdTimersRef.current.forEach((id) => window.clearTimeout(id));
+    holdTimersRef.current = [];
+    if (nukeTargetRef.current && !nukeBlastRef.current) {
+      nukeTargetRef.current = null;
+      setNukeCount(null);
+    }
+    setSelected(null);
+    closeMenu();
+  };
+
   // Track the aim point under the pointer while arming (drives the live reticle).
   const onCanvasMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!nukeArmedRef.current) return;
@@ -839,20 +884,13 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     const fy = (e.clientY - rect.top) / cell;
     const col = Math.floor(fx);
     const row = Math.floor(fy);
+    const onRoad = !isBuildable(col, row, blockedRef.current);
 
-    // secret nuke: tap the home base 5 times (quickly) to arm the one-per-game strike.
-    // The base marble is bigger than a tile, so accept taps within ~1.2 tiles of it.
-    const distToBase = Math.hypot(fx - (baseRef.current.x + 0.5), fy - (baseRef.current.y + 0.5));
-    if (distToBase < 1.2) {
-      const now = performance.now();
-      if (now - baseTapRef.current.t > 1500) baseTapRef.current.n = 0; // reset if too slow
-      baseTapRef.current = { n: baseTapRef.current.n + 1, t: now };
-      if (baseTapRef.current.n >= 5) {
-        baseTapRef.current.n = 0;
-        armNuke(); // no-ops if already used/armed
-      } else if (baseTapRef.current.n >= 3 && !nukeUsed) {
-        flash(`Nuke in ${5 - baseTapRef.current.n}...`);
-      }
+    // HOLD-TO-NUKE: press and hold the road for ~3s to drop the one-per-game strike
+    // right there (no more tapping the base). A quick tap on the road just closes
+    // the menu - handled on pointer-up once the hold is aborted.
+    if (onRoad && !nukeUsed && !nukeTargetRef.current) {
+      startNukeHold(fx - 0.5, fy - 0.5);
       return;
     }
 
@@ -869,10 +907,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       return;
     }
     setSelected(null);
-    // tapping the street (or any non-buildable tile) is just a "click out" - it
-    // closes the build menu silently. No nagging toast; the player uses the road
-    // as empty space to tap away.
-    if (!isBuildable(col, row, blockedRef.current)) {
+    // tapping the street when the nuke is already spent is just a silent click-out
+    if (onRoad) {
       closeMenu();
       return;
     }
@@ -1123,19 +1159,16 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 sm:px-4 sm:py-3"
         style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
       >
-        {/* stage + wave + auto-start countdown */}
-        <span
-          className="flex items-center gap-1.5 rounded-md bg-white/5 px-2 py-0.5 text-xs font-black text-white/85 sm:text-sm"
-          title="Stage"
-        >
+        {/* stage + wave + auto-start countdown - uniform white, same font/weight */}
+        <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Stage">
           S{stage + 1}/{TOTAL_STAGES}
-          <span className="hidden font-bold text-white/55 sm:inline">· {STAGES[stage].name}</span>
+          <span className="hidden font-black text-white/55 sm:inline">· {STAGES[stage].name}</span>
         </span>
-        <span className="flex items-center gap-1.5 text-sm font-black text-cyan-400 sm:text-base" title="Wave">
+        <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Wave">
           <Icon.Wave />
           {wave}/{TOTAL_WAVES}
           {phase === "ready" && countdown !== null && (
-            <span className="font-bold text-white/70">· {countdown}s</span>
+            <span className="font-black text-white/70">· {countdown}s</span>
           )}
         </span>
         {/* gold + terminated */}
@@ -1144,11 +1177,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             <Icon.Coin />
             {gold}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-black text-white/85 sm:text-base" title="Terminated">
+          <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Terminated">
             <Icon.Skull />
             {kills}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-black text-yellow-300 sm:text-base" title="Score">
+          <span className="flex items-center gap-1.5 text-sm font-black text-white sm:text-base" title="Score">
             <Trophy className={IC} />
             {score.toLocaleString()}
           </span>
@@ -1164,18 +1197,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           </button>
           <button
             onClick={cycleSpeed}
-            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-black text-cyan-300 active:scale-95"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-black text-white active:scale-95"
             aria-label={`Game speed ${speed} times, tap to change`}
           >
             {speed}x
           </button>
           <button
-            onClick={onToggleMute}
+            onClick={togglePause}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
-            aria-label={muted ? "Unmute sound" : "Mute sound"}
-            aria-pressed={muted}
+            aria-label={paused ? "Resume" : "Pause"}
+            aria-pressed={paused}
           >
-            {muted ? <Icon.SoundOff /> : <Icon.SoundOn />}
+            {paused ? <Icon.Play /> : <Icon.Pause />}
           </button>
           <div className="flex items-center gap-1.5">
             <span className="max-w-[8rem] truncate text-sm font-black text-white/90 sm:text-base">
@@ -1207,10 +1240,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             </div>
             <button
               onClick={togglePause}
-              className="mb-5 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 py-2.5 font-bold active:scale-95"
+              className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 py-2.5 font-bold active:scale-95"
             >
               {paused ? <Icon.Play /> : <Icon.Pause />}
               {paused ? "Resume" : "Pause"}
+            </button>
+            <button
+              onClick={onToggleMute}
+              className="mb-5 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 py-2.5 font-bold active:scale-95"
+              aria-pressed={muted}
+            >
+              {muted ? <Icon.SoundOff /> : <Icon.SoundOn />}
+              {muted ? "Sound off" : "Sound on"}
             </button>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/50">
               Difficulty
@@ -1264,6 +1305,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           <canvas
             ref={canvasRef}
             onPointerDown={onCanvasPointer}
+            onPointerUp={onCanvasUp}
+            onPointerCancel={onCanvasUp}
             onPointerMove={onCanvasMove}
             role="img"
             aria-label="Battle map - tap an open tile to open the tower menu, tap a tower to upgrade it"

@@ -89,16 +89,19 @@ export function fireTowers(
   enemies: Enemy[],
   dt: number,
   time: number,
+  entry?: Vec2,
 ): FireResult {
   const projectiles: Projectile[] = [];
   for (const tower of towers) {
     tower.cooldown -= dt;
     const target = pickTarget(tower, enemies);
     const center = towerCenter(tower);
-    // rotate the barrel to track the target every frame (even while on cooldown),
-    // and hold the last angle when nothing is in range - "follow as long as it can"
+    // aim at the target while one is in range; otherwise face the enemy ENTRY so
+    // an idle barrel always watches the entrance (never a random direction)
     if (target) {
       tower.aim = Math.atan2(target.pos.y - center.y, target.pos.x - center.x);
+    } else if (entry) {
+      tower.aim = Math.atan2(entry.y - center.y, entry.x - center.x);
     }
     if (tower.cooldown > 0 || !target) continue;
 

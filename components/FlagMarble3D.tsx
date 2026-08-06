@@ -91,7 +91,8 @@ const SHIELD_VERT = `
   varying vec3 vView;
   void main() {
     vec3 p = position;
-    float w = sin(p.y * 6.0 + uTime * 3.0) * 0.02 + sin(p.x * 5.0 - uTime * 2.0) * 0.02;
+    // a very gentle ripple - kept tiny so the bubble never bulges past the frame
+    float w = sin(p.y * 6.0 + uTime * 3.0) * 0.006 + sin(p.x * 5.0 - uTime * 2.0) * 0.006;
     p += normal * w;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     vN = normalize(normalMatrix * normal);
@@ -104,9 +105,11 @@ const SHIELD_FRAG = `
   varying vec3 vN;
   varying vec3 vView;
   void main() {
-    float fres = pow(1.0 - max(dot(vN, vView), 0.0), 2.5);
-    float band = 0.06 + 0.05 * sin(uTime * 4.0);
-    float a = fres * 0.72 + band;
+    // thin, glassy skin: a soft fresnel rim on near-invisible glass, so it reads
+    // as a delicate see-through bubble rather than a solid white shell
+    float fres = pow(1.0 - max(dot(vN, vView), 0.0), 3.0);
+    float shimmer = 0.015 + 0.02 * sin(uTime * 4.0);
+    float a = fres * 0.32 + shimmer;
     gl_FragColor = vec4(vec3(1.0), a);
   }
 `;
@@ -120,7 +123,7 @@ function ShieldBubble() {
     if (meshRef.current) meshRef.current.rotation.y += dt * 0.25;
   });
   return (
-    <mesh ref={meshRef} scale={1.16}>
+    <mesh ref={meshRef} scale={1.08}>
       <sphereGeometry args={[1, 48, 48]} />
       <shaderMaterial
         ref={matRef}

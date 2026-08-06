@@ -1656,7 +1656,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                       : "bg-white/10 text-white"
                   }`}
                 >
-                  {movingId === selected.id ? "Tap an open tile…" : "Move (free)"}
+                  {movingId === selected.id ? "Tap an open tile…" : "Move"}
                 </button>
               )}
             </div>

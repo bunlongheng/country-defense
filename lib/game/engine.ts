@@ -70,28 +70,49 @@ export function moveEnemies(
   return { survivors, leaked };
 }
 
-// Drive the self-roaming tanks: each drifts toward a random point on the board and
-// picks a new one when it arrives, so the white Frost Rover patrols on its own. Runs
-// every frame (even between waves) so the tank is always alive on the map.
-export function stepRoamers(towers: Tower[], dt: number, cols: number, rows: number) {
-  const pick = (): Vec2 => ({
-    x: Math.random() * (cols - 1),
-    y: Math.random() * (rows - 1),
+const ROAMER_SPEED = 1.1; // tiles per second - a slow tank crawl
+
+// Pick the next grid cell to drive to: one orthogonal neighbour (N/S/E/W, never
+// diagonal), staying on the board. Keeps the roamer riding the grid like a tank.
+function nextRoamerCell(pos: Vec2, cols: number, rows: number): Vec2 {
+  const cx = Math.round(pos.x);
+  const cy = Math.round(pos.y);
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ].filter(([dx, dy]) => {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    return nx >= 0 && nx <= cols - 1 && ny >= 0 && ny <= rows - 1;
   });
+  const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)] ?? [0, 0];
+  return { x: cx + dx, y: cy + dy };
+}
+
+// Drive the self-roaming tank cell-to-cell along the grid (one orthogonal step at a
+// time), picking a fresh neighbour each time it arrives, so it crawls the board like
+// a real tank. Runs every frame (even between waves) so it's always alive.
+export function stepRoamers(towers: Tower[], dt: number, cols: number, rows: number) {
   for (const t of towers) {
     if (t.type !== "roamer") continue;
     if (!t.pos) t.pos = { x: t.cell.x, y: t.cell.y };
-    if (!t.wander) t.wander = pick();
+    if (!t.wander) t.wander = nextRoamerCell(t.pos, cols, rows);
     const dx = t.wander.x - t.pos.x;
     const dy = t.wander.y - t.pos.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 0.2) {
-      t.wander = pick();
-      continue;
+    const remaining = Math.abs(dx) + Math.abs(dy); // orthogonal distance to the cell
+    const stepLen = ROAMER_SPEED * dt;
+    if (remaining <= stepLen + 1e-4) {
+      // arrived: snap onto the cell, then choose the next neighbour to drive to
+      t.pos = { x: t.wander.x, y: t.wander.y };
+      t.cell = { x: Math.round(t.wander.x), y: Math.round(t.wander.y) };
+      t.wander = nextRoamerCell(t.pos, cols, rows);
+    } else if (Math.abs(dx) > 1e-4) {
+      t.pos.x += Math.sign(dx) * Math.min(Math.abs(dx), stepLen);
+    } else {
+      t.pos.y += Math.sign(dy) * Math.min(Math.abs(dy), stepLen);
     }
-    const stepLen = Math.min(d, 1.5 * dt); // ~1.5 tiles/sec
-    t.pos.x += (dx / d) * stepLen;
-    t.pos.y += (dy / d) * stepLen;
   }
 }
 

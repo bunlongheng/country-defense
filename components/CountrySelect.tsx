@@ -9,7 +9,7 @@ import {
 } from "@/lib/countries";
 import { startMenuMusic, stopMenuMusic } from "@/lib/game/music";
 import { Dices } from "lucide-react";
-import FlagMarble2D from "./FlagMarble2D";
+import FlagMarble3D from "./FlagMarble3D";
 
 export default function CountrySelect({
   onStart,
@@ -48,7 +48,7 @@ export default function CountrySelect({
         <div className="relative aspect-square w-full max-w-[340px]">
           <div className="absolute inset-0 rounded-full bg-cyan-500/10 blur-3xl" />
           <div className="relative h-full w-full">
-            <FlagMarble2D code={code} />
+            <FlagMarble3D code={code} />
           </div>
         </div>
 

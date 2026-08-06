@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
+import FlagShatter3D from "./FlagShatter3D";
 import {
   unlockAudio,
   toggleMute,
@@ -47,7 +48,7 @@ import {
   upgradeCost,
   sellValue,
 } from "@/lib/game/towers";
-import { draw } from "@/lib/game/render";
+import { draw, drawTower } from "@/lib/game/render";
 import {
   spawnWave,
   waveClearBonus,
@@ -113,7 +114,7 @@ function ScorePanel({
   return (
     <div className="w-full max-w-xs rounded-xl bg-black/40 p-3 text-center ring-1 ring-white/10">
       <div className="text-3xl font-black text-white">{r.final.toLocaleString()}</div>
-      <div className="text-[10px] font-bold uppercase tracking-widest text-white/45">Score</div>
+      <div className="text-[10px] font-medium uppercase tracking-widest text-white/45">Score</div>
       {r.isBest ? (
         <div className="mt-1 text-sm font-black text-white">🎉 New high score!</div>
       ) : (
@@ -136,51 +137,13 @@ function ScorePanel({
               )}
               <span className="flex-1 truncate text-white/75">{e.country}</span>
               <span className="text-white/35">{formatWhen(e.date)}</span>
-              <span className="w-12 text-right font-bold text-white">
+              <span className="w-12 text-right font-medium text-white">
                 {e.score.toLocaleString()}
               </span>
             </div>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// The defeated country's flag with a shattered-glass crack over it.
-function CrackedFlag({ code }: { code: string }) {
-  return (
-    <div className="relative h-24 w-32" style={{ animation: "popIn 0.5s ease-out" }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={flagUrl(code)}
-        alt=""
-        className="h-full w-full rounded-md object-cover opacity-80 ring-1 ring-white/25"
-        style={{ filter: "grayscale(0.25) brightness(0.85)" }}
-      />
-      <svg viewBox="0 0 128 96" className="absolute inset-0 h-full w-full">
-        <g fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="2.4" strokeLinejoin="round">
-          <polyline points="64,46 40,18 31,0" />
-          <polyline points="64,46 92,16 128,7" />
-          <polyline points="64,46 98,60 128,52" />
-          <polyline points="64,46 72,82 62,96" />
-          <polyline points="64,46 28,66 0,74" />
-          <polyline points="64,46 18,38 0,28" />
-        </g>
-        <g fill="none" stroke="rgba(255,255,255,0.92)" strokeWidth="1.2" strokeLinejoin="round">
-          <polyline points="64,46 40,18 31,0" />
-          <polyline points="64,46 92,16 128,7" />
-          <polyline points="64,46 98,60 128,52" />
-          <polyline points="64,46 72,82 62,96" />
-          <polyline points="64,46 28,66 0,74" />
-          <polyline points="64,46 18,38 0,28" />
-          <polyline points="40,18 55,30" />
-          <polyline points="92,16 82,36" />
-          <polyline points="98,60 84,50" />
-          <polyline points="72,82 58,64" />
-          <polyline points="28,66 46,52" />
-        </g>
-      </svg>
     </div>
   );
 }
@@ -251,6 +214,34 @@ function labelColor(hex: string): string {
   if (0.299 * r + 0.587 * g + 0.114 * b >= 120) return hex;
   const mix = (c: number) => Math.round(c + (255 - c) * 0.55);
   return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+}
+
+// A tiny live preview of the ACTUAL tower a build petal will place - the real
+// drawn tank (plate + glossy dome + barrel + emblem), not just its ability icon,
+// so you can see what you're getting. Static level-1 render (no flag until lvl3).
+function TowerChip({ type }: { type: TowerType }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    const ctx = cv?.getContext("2d");
+    if (!cv || !ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const S = 40;
+    const cell = 52;
+    cv.width = S * dpr;
+    cv.height = S * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, S, S);
+    drawTower(
+      ctx,
+      { x: S / 2, y: S / 2 + 2 },
+      cell,
+      { id: 0, type, cell: { x: 0, y: 0 }, level: 1, cooldown: 0 },
+      "",
+      0,
+    );
+  }, [type]);
+  return <canvas ref={ref} className="h-[40px] w-[40px]" aria-hidden />;
 }
 
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
@@ -1447,10 +1438,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                         background: `radial-gradient(circle at 40% 30%, ${d.color}33, #0b0d12 88%)`,
                       }}
                     >
-                      <span className="text-lg leading-none" style={{ color: d.color }}>
-                        {d.icon}
-                      </span>
-                      <span className="text-[9px] font-bold leading-none text-amber-300">
+                      <TowerChip type={type} />
+                      <span className="text-[9px] font-medium leading-none text-amber-300">
                         ${d.cost}
                       </span>
                     </button>
@@ -1578,8 +1567,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           {/* defeat */}
           {phase === "lost" && (
             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-black/60 py-6">
-              <CrackedFlag code={code} />
-              <div className="text-2xl font-black">{country.name} fell</div>
+              <FlagShatter3D code={code} />
+              <div className="text-2xl font-black">{country.name}</div>
               <div className="text-sm text-white/60">
                 Stage {stage + 1}, wave {wave}
               </div>

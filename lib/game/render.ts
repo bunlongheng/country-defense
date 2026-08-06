@@ -519,7 +519,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-    drawTower(ctx, p, cell, t, s.palette, s.code, s.time);
+    drawTower(ctx, p, cell, t, s.code, s.time);
   }
 
   // build preview: highlight the tapped tile, its reach, and a ghost turret
@@ -546,7 +546,6 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
       p,
       cell,
       { id: -1, type: s.preview.type, cell: s.preview.cell, level: 1, cooldown: 0 },
-      s.palette,
       s.code,
       s.time,
     );
@@ -931,12 +930,11 @@ function drawParticles(ctx: CanvasRenderingContext2D, cell: number, list: Partic
 
 // A glossy, tanky turret: shadow, country-colored armor base, a domed turret lit
 // from the global sun, a barrel, a bright specular streak, and level pips.
-function drawTower(
+export function drawTower(
   ctx: CanvasRenderingContext2D,
   p: Vec2,
   cell: number,
   t: Tower,
-  palette: string[],
   code: string,
   time: number,
 ) {
@@ -944,7 +942,10 @@ function drawTower(
   // level 1 is small; each upgrade makes the tower visibly bigger and beefier
   // lvl1 .25, lvl2 .30, lvl3 .35, lvl4 .40, lvl5 .45 - a clear step every upgrade
   const R = cell * (0.2 + t.level * 0.05);
-  const c1 = palette[0] ?? "#64748b"; // the nation's main colour
+  // the plate is coloured by the UNIT itself (not the country flag), so a green
+  // tower gets a green base, orange gets orange, the black tank gets black - and
+  // the glossy radial body gives every colour the same black-gloss-on-black sheen
+  const c1 = def.color;
 
   // ground shadow
   ctx.fillStyle = "rgba(0,0,0,0.38)";

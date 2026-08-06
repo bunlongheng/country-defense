@@ -1044,6 +1044,8 @@ function drawTower(
     drawBombEmblem(ctx, p.x, p.y, cell * 0.34);
   } else if (t.type === "slime") {
     drawSlimeEmblem(ctx, p.x, p.y, cell * 0.34);
+  } else if (t.type === "sniper") {
+    drawSniperEmblem(ctx, p.x, p.y, cell * 0.34);
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.font = `${Math.round(cell * 0.3)}px system-ui`;
@@ -1104,21 +1106,48 @@ function drawBombEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s
   ctx.restore();
 }
 
-// A real slime-droplet icon (teardrop + shine) drawn as vector art - no emoji.
+// A clean glossy goo-ball icon, centered on the dome (no more lopsided teardrop).
 function drawSlimeEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const r = s * 0.46;
-  ctx.fillStyle = "#365314"; // dark green drop on the lime dome
+  const r = s * 0.5;
+  const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.12, cx, cy, r);
+  g.addColorStop(0, "#d9f99d");
+  g.addColorStop(0.55, "#65a30d");
+  g.addColorStop(1, "#1a2e05");
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(cx, cy - r * 1.35);
-  ctx.bezierCurveTo(cx + r * 1.25, cy - r * 0.15, cx + r, cy + r, cx, cy + r);
-  ctx.bezierCurveTo(cx - r, cy + r, cx - r * 1.25, cy - r * 0.15, cx, cy - r * 1.35);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = Math.max(1, s * 0.05);
-  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = Math.max(1, s * 0.05); // dark rim so it reads on the lime dome
+  ctx.strokeStyle = "rgba(20,40,5,0.7)";
   ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.65)"; // shine
+  ctx.fillStyle = "rgba(255,255,255,0.75)"; // glossy glint
   ctx.beginPath();
-  ctx.ellipse(cx - r * 0.32, cy - r * 0.05, r * 0.16, r * 0.3, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(cx - r * 0.3, cy - r * 0.32, r * 0.22, r * 0.14, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(217,249,157,0.85)"; // tiny bubbles
+  ctx.beginPath();
+  ctx.arc(cx + r * 0.34, cy + r * 0.22, r * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// A crisp crosshair/scope icon, drawn exactly on the dome centre (the "⌖" glyph
+// rendered off-centre in the font, which is why the sniper looked misaligned).
+function drawSniperEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.42;
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = Math.max(1.2, s * 0.07);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 1.35, cy);
+  ctx.lineTo(cx + r * 1.35, cy);
+  ctx.moveTo(cx, cy - r * 1.35);
+  ctx.lineTo(cx, cy + r * 1.35);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.16, 0, Math.PI * 2);
   ctx.fill();
 }
 

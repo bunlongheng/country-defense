@@ -10,6 +10,7 @@ import {
   Volume2,
   VolumeX,
   Settings,
+  Trophy,
 } from "lucide-react";
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
@@ -57,6 +58,13 @@ import {
 } from "@/lib/game/waves";
 import { STAGES, TOTAL_STAGES, stageBase } from "@/lib/game/stages";
 import {
+  POINTS,
+  saveScore,
+  highScore,
+  formatWhen,
+  type ScoreEntry,
+} from "@/lib/game/score";
+import {
   moveEnemies,
   fireTowers,
   stepBombs,
@@ -93,6 +101,42 @@ const CONFETTI_PIECES = Array.from({ length: 48 }, (_, i) => {
     gold: CONFETTI_GOLD[Math.floor(r(6) * CONFETTI_GOLD.length)],
   };
 });
+
+// Game-over score card: the run's final score, whether it's a new best, and the
+// device's top-5 board with timestamps.
+function ScorePanel({
+  r,
+}: {
+  r: { final: number; prevBest: number; isBest: boolean; board: ScoreEntry[] };
+}) {
+  return (
+    <div className="w-full max-w-xs rounded-xl bg-black/40 p-3 text-center ring-1 ring-white/10">
+      <div className="text-3xl font-black text-yellow-300">{r.final.toLocaleString()}</div>
+      <div className="text-[10px] font-bold uppercase tracking-widest text-white/45">Score</div>
+      {r.isBest ? (
+        <div className="mt-1 text-sm font-black text-amber-300">🎉 New high score!</div>
+      ) : (
+        <div className="mt-1 text-xs text-white/55">
+          Best {r.prevBest.toLocaleString()}
+        </div>
+      )}
+      {r.board.length > 0 && (
+        <div className="mt-3 space-y-1 text-left">
+          {r.board.slice(0, 5).map((e, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <span className="w-3 text-white/35">{i + 1}</span>
+              <span className="flex-1 truncate text-white/75">{e.country}</span>
+              <span className="text-white/35">{formatWhen(e.date)}</span>
+              <span className="w-12 text-right font-bold text-yellow-300">
+                {e.score.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Confetti({ gold }: { gold: boolean }) {
   return (
@@ -212,6 +256,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [wave, setWave] = useState(1);
   const [kills, setKills] = useState(0); // total invaders terminated
   const killsRef = useRef(0);
+  const [score, setScore] = useState(0); // running score from kills + waves + stages
+  const scoreRef = useRef(0);
+  // end-of-game result: final score + how it stacks up + the top board (localStorage)
+  const [result, setResult] = useState<{
+    final: number;
+    prevBest: number;
+    isBest: boolean;
+    board: ScoreEntry[];
+  } | null>(null);
   const [phase, setPhaseState] = useState<Phase>("ready");
   const [buildType, setBuildType] = useState<TowerType | null>("laser");
   const [speed, setSpeed] = useState(1);
@@ -350,6 +403,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     waveRef.current = 1;
     killsRef.current = 0;
     setKills(0);
+    scoreRef.current = 0;
+    setScore(0);
+    setResult(null);
     setGold(START_GOLD);
     setWave(1);
     setSelected(null);
@@ -380,6 +436,28 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setConfetti("none");
     resetBoard();
   }, [applyStage, resetBoard]);
+
+  // Tally the final score at game over (running score + a bonus for the lives and
+  // the gold left over), record it on the device board, and stash the result.
+  const finalizeScore = useCallback(
+    (outcome: "won" | "lost") => {
+      const final =
+        scoreRef.current +
+        livesRef.current * POINTS.lifePerLeft +
+        goldRef.current * POINTS.goldPerLeft;
+      const prevBest = highScore();
+      const board = saveScore({
+        score: final,
+        date: Date.now(),
+        outcome,
+        stage: stageRef.current + 1,
+        wave: waveRef.current,
+        country: country?.name ?? code,
+      });
+      setResult({ final, prevBest, isBest: final > prevBest, board });
+    },
+    [code, country],
+  );
 
   // ---- the game loop -----------------------------------------------------
   useEffect(() => {
@@ -451,6 +529,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         playKill();
         killsRef.current += reaped.kills;
         setKills(killsRef.current);
+        scoreRef.current += reaped.kills * POINTS.kill;
+        setScore(scoreRef.current);
         for (const e of killed) {
           spawnExplosion(particlesRef.current, e.pos.x, e.pos.y, "#f97316");
         }
@@ -461,17 +541,21 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
       if (livesRef.current <= 0) {
         playLose();
+        finalizeScore("lost");
         setPhase("lost");
       } else if (enemies.current.length === 0) {
         const bonus = waveClearBonus(waveRef.current);
         goldRef.current += bonus;
         setGold(goldRef.current);
         if (waveRef.current >= TOTAL_WAVES) {
+          scoreRef.current += POINTS.stage; // a whole stage cleared
+          setScore(scoreRef.current);
           // whole stage cleared
           if (stageRef.current >= TOTAL_STAGES - 1) {
             // final stage down -> CHAMPION of the journey
             playWin();
             setConfetti("gold");
+            finalizeScore("won");
             setPhase("won");
           } else {
             // celebrate this stage, then roll on to the next map
@@ -481,6 +565,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             window.setTimeout(() => advanceStage(), 2600);
           }
         } else {
+          scoreRef.current += POINTS.wave; // a wave cleared
+          setScore(scoreRef.current);
           waveRef.current += 1;
           setWave(waveRef.current);
           setPhase("ready");
@@ -598,7 +684,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [code, startWave, advanceStage]);
+  }, [code, startWave, advanceStage, finalizeScore]);
 
   // ---- build / select ----------------------------------------------------
   // Core purchase: validate, place the tower, spend gold, ka-ching. Returns
@@ -1062,6 +1148,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             <Icon.Skull />
             {kills}
           </span>
+          <span className="flex items-center gap-1.5 text-sm font-black text-yellow-300 sm:text-base" title="Score">
+            <Trophy className={IC} />
+            {score.toLocaleString()}
+          </span>
         </div>
         {/* controls */}
         <div className="flex items-center gap-3 sm:gap-4">
@@ -1353,8 +1443,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
           {/* CHAMPION: beat all 10 stages - spinning gold cup + golden podium */}
           {phase === "won" && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-2xl bg-gradient-to-b from-amber-900/85 to-black/90 backdrop-blur-sm">
-              <div className="text-7xl" style={{ animation: "trophySpin 2.2s ease-in-out infinite" }}>
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-gradient-to-b from-amber-900/85 to-black/90 py-6 backdrop-blur-sm">
+              <div className="text-6xl" style={{ animation: "trophySpin 2.2s ease-in-out infinite" }}>
                 🏆
               </div>
               <div className="text-3xl font-black text-amber-300" style={{ animation: "popIn 0.5s ease-out" }}>
@@ -1365,13 +1455,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                 <img
                   src={flagUrl(code)}
                   alt=""
-                  className="h-12 w-16 rounded-md object-cover ring-2 ring-amber-300"
+                  className="h-11 w-14 rounded-md object-cover ring-2 ring-amber-300"
                 />
-                <div className="mt-1 text-lg font-black text-white">{country.name}</div>
-                <div className="mt-1 h-3 w-40 rounded-b bg-gradient-to-b from-amber-300 to-amber-600" />
-                <div className="h-6 w-28 rounded-b bg-gradient-to-b from-amber-400 to-amber-700" />
+                <div className="mt-1 text-base font-black text-white">{country.name}</div>
+                <div className="mt-1 h-2.5 w-36 rounded-b bg-gradient-to-b from-amber-300 to-amber-600" />
+                <div className="h-5 w-24 rounded-b bg-gradient-to-b from-amber-400 to-amber-700" />
               </div>
-              <div className="text-sm text-amber-100/80">You conquered all {TOTAL_STAGES} stages!</div>
+              <div className="text-xs text-amber-100/80">You conquered all {TOTAL_STAGES} stages!</div>
+              {result && <ScorePanel r={result} />}
               <button
                 onClick={resetGame}
                 className="mt-1 rounded-full bg-amber-300 px-6 py-3 font-black text-black active:scale-95"
@@ -1383,12 +1474,13 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
           {/* defeat */}
           {phase === "lost" && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/55">
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-black/60 py-6">
               <div className="text-5xl">💥</div>
               <div className="text-2xl font-black">{country.name} fell</div>
               <div className="text-sm text-white/60">
                 Stage {stage + 1}, wave {wave}
               </div>
+              {result && <ScorePanel r={result} />}
               <button
                 onClick={resetGame}
                 className="rounded-full bg-cyan-400 px-6 py-3 font-bold text-black active:scale-95"

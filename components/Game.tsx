@@ -337,6 +337,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     left: number;
     top: number;
   } | null>(null);
+  // id of a tower being relocated (grace period only) - the next tap on an open
+  // tile moves it there for free; null when not moving
+  const [movingId, setMovingId] = useState<number | null>(null);
 
   const goldRef = useRef(START_GOLD);
   const livesRef = useRef(START_LIVES);
@@ -419,6 +422,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     countdownEndRef.current = null;
     shownCountdownRef.current = null;
     setCountdown(null);
+    setMovingId(null); // moving is a grace-period-only action
     playWaveStart();
     setPhase("wave");
   }, []);
@@ -466,6 +470,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setSelected(null);
     setBuildType("laser");
     setMenu(null);
+    setMovingId(null);
     previewRef.current = null;
     // fresh nuke for the new board
     nukeArmedRef.current = false;
@@ -981,6 +986,31 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     const col = Math.floor(fx);
     const row = Math.floor(fy);
     const onRoad = !isBuildable(col, row, blockedRef.current);
+
+    // GRACE-PERIOD MOVE: a tower is being relocated - this tap drops it on an open
+    // tile for free (no re-buy), keeping its type + level. Only allowed while the
+    // wave hasn't started; invalid tiles just flash and keep move mode active.
+    if (movingId !== null && phaseRef.current === "ready") {
+      const t = towers.current.find((tw) => tw.id === movingId);
+      const taken = towers.current.some(
+        (tw) => tw.id !== movingId && tw.cell.x === col && tw.cell.y === row,
+      );
+      if (t && !onRoad && !taken) {
+        t.cell = { x: col, y: row };
+        playUpgrade();
+        setMovingId(null);
+        setSelected({
+          id: t.id,
+          type: t.type,
+          level: t.level,
+          left: canvas.offsetLeft + (col + 0.5) * cell,
+          top: canvas.offsetTop + row * cell,
+        });
+      } else {
+        flash("Move to an open tile");
+      }
+      return;
+    }
 
     // HOLD-TO-NUKE: press and hold the road for ~3s to drop the one-per-game strike
     // right there (no more tapping the base). A quick tap on the road just closes
@@ -1574,6 +1604,21 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                   Sell ${sellValue(selected.type, selected.level)}
                 </button>
               </div>
+              {/* relocate for free - only between waves (grace period) */}
+              {phase === "ready" && (
+                <button
+                  onClick={() =>
+                    setMovingId((m) => (m === selected.id ? null : selected.id))
+                  }
+                  className={`mt-2 min-h-11 w-full rounded-lg px-3 py-2 text-sm font-bold ${
+                    movingId === selected.id
+                      ? "bg-amber-400 text-black"
+                      : "bg-white/10 text-white"
+                  }`}
+                >
+                  {movingId === selected.id ? "Tap an open tile…" : "Move (free)"}
+                </button>
+              )}
             </div>
           )}
 

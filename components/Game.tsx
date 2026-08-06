@@ -275,7 +275,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const cellRef = useRef(48); // px per tile, recomputed on resize
   const seedRef = useRef(0); // per-game seed so each playthrough varies invaders
   const cursorRef = useRef<{ x: number; y: number } | null>(null); // keyboard cursor
-  const speedRef = useRef(1); // 1x / 2x / 3x fast-forward
+  const speedRef = useRef(1); // 1x .. 5x fast-forward
   const pausedRef = useRef(false);
   const paletteRef = useRef<string[]>([]); // dominant flag colors (country theme)
   const countdownEndRef = useRef<number | null>(null); // performance.now() deadline for auto-start
@@ -1215,7 +1215,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   };
 
   const cycleSpeed = () => {
-    const next = speedRef.current >= 3 ? 1 : speedRef.current + 1;
+    const next = speedRef.current >= 5 ? 1 : speedRef.current + 1;
     speedRef.current = next;
     setSpeed(next);
   };

@@ -1383,31 +1383,66 @@ function drawShot(
       ctx.beginPath();
       ctx.arc(px, py, headR, 0, Math.PI * 2);
       ctx.fill();
+      // IMPACT BURST on the enemy: a bright orange-red blast + flung embers so you
+      // clearly see the fireball land
+      if (prog > 0.76) {
+        const ip = (prog - 0.76) / 0.24;
+        const ir = s * (0.22 + ip * 0.5);
+        const ig = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, ir);
+        ig.addColorStop(0, `rgba(255,240,190,${(1 - ip) * 0.95})`);
+        ig.addColorStop(0.4, `rgba(255,110,30,${(1 - ip) * 0.85})`);
+        ig.addColorStop(1, "rgba(220,40,10,0)");
+        ctx.fillStyle = ig;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, ir, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255,170,60,${(1 - ip) * 0.9})`;
+        for (let k = 0; k < 6; k++) {
+          const ea = (k / 6) * Math.PI * 2 + pr.jitter * 4;
+          const er = ip * s * 0.55;
+          ctx.beginPath();
+          ctx.arc(b.x + Math.cos(ea) * er, b.y + Math.sin(ea) * er, s * 0.05, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       ctx.restore();
       break;
     }
     case "frost": {
-      // WATER: a droplet flies from the barrel, then a splash ring on the target
+      // WATER: a spurt of SEPARATE droplets flies from the barrel (not a beam),
+      // then a splash of droplets bursts on the target
       const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
-      const px = a.x + (b.x - a.x) * prog;
-      const py = a.y + (b.y - a.y) * prog;
-      ctx.strokeStyle = "rgba(96,165,250,0.45)"; // faint water streak
-      ctx.lineWidth = lw * 0.06;
-      line(ctx, a, { x: px, y: py });
-      const dg = ctx.createRadialGradient(px - s * 0.03, py - s * 0.03, 1, px, py, s * 0.11);
-      dg.addColorStop(0, "#e0f2fe");
-      dg.addColorStop(1, "#2563eb");
-      ctx.fillStyle = dg;
-      ctx.beginPath();
-      ctx.arc(px, py, s * 0.11, 0, Math.PI * 2);
-      ctx.fill();
-      if (prog > 0.72) {
-        const sp = (prog - 0.72) / 0.28; // expanding splash ring at impact
+      // a string of 4 droplets trailing the lead one, each smaller, gently offset
+      for (let k = 0; k < 4; k++) {
+        const t2 = prog - k * 0.12;
+        if (t2 < 0) continue;
+        const dx = a.x + (b.x - a.x) * t2;
+        const dy = a.y + (b.y - a.y) * t2 + Math.sin(k * 2 + pr.jitter * 6) * s * 0.06;
+        const dr = s * (0.11 - k * 0.018);
+        const g = ctx.createRadialGradient(dx - dr * 0.3, dy - dr * 0.3, 1, dx, dy, dr);
+        g.addColorStop(0, "#e0f2fe");
+        g.addColorStop(1, "#2563eb");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(dx, dy, dr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // splash on impact: a ring plus a few droplets flying off the target
+      if (prog > 0.7) {
+        const sp = (prog - 0.7) / 0.3;
         ctx.strokeStyle = `rgba(147,197,253,${(1 - sp) * 0.9})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(b.x, b.y, s * 0.1 + sp * s * 0.4, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.fillStyle = `rgba(147,197,253,${(1 - sp) * 0.9})`;
+        for (let k = 0; k < 5; k++) {
+          const ang = (k / 5) * Math.PI * 2;
+          const rr = sp * s * 0.4;
+          ctx.beginPath();
+          ctx.arc(b.x + Math.cos(ang) * rr, b.y + Math.sin(ang) * rr, s * 0.04, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       break;
     }

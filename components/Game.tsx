@@ -122,7 +122,7 @@ const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 // a donut with the placement spot open in the middle (tap outside or Esc to
 // close). MENU_STEP is the ring radius; MENU_AROUND holds unit-circle offsets,
 // clockwise from the top.
-const MENU_STEP = 82;
+const MENU_STEP = 110; // ring radius - spread the petals out so they're easy to aim at
 const MENU_AROUND: [number, number][] = Array.from({ length: 8 }, (_, i) => {
   const a = -Math.PI / 2 + (i * Math.PI * 2) / 8;
   return [Math.cos(a), Math.sin(a)];
@@ -783,8 +783,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       return;
     }
     setSelected(null);
+    // tapping the street (or any non-buildable tile) is just a "click out" - it
+    // closes the build menu silently. No nagging toast; the player uses the road
+    // as empty space to tap away.
     if (!isBuildable(col, row, blockedRef.current)) {
-      flash("Can't build on the path");
       closeMenu();
       return;
     }

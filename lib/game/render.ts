@@ -219,9 +219,15 @@ function scenery(
   for (let c = 0; c < GRID_COLS; c++) {
     for (let r = 0; r < GRID_ROWS; r++) {
       if (inPath(c, r) || inWater(c, r)) continue;
+      // a backdrop mountain range along the very top row (distant, behind the play)
+      if (r === 0 && hash(c, r, 20) < 0.55) {
+        mountain(ctx, c * cell + cell * 0.5, cell * 0.95, cell, decor === "ice");
+        continue;
+      }
       const roll = hash(c, r, 11);
       const edge = c === 0 || r === 0 || c === GRID_COLS - 1 || r === GRID_ROWS - 1;
-      const chance = edge ? 0.7 : 0.32;
+      // denser scatter so each stage feels lush - more cactus / trees / greenery
+      const chance = edge ? 0.85 : 0.46;
       if (roll > chance) continue;
       const cx = c * cell + cell * (0.2 + hash(c, r, 12) * 0.6);
       const cy = r * cell + cell * (0.2 + hash(c, r, 13) * 0.6);
@@ -229,6 +235,44 @@ function scenery(
       prop(ctx, cx, cy, cell, decor, accent, kind, hash(c, r, 15));
     }
   }
+}
+
+// A layered backdrop mountain with a light cap - drawn along the top as distant
+// terrain so the arena feels set in real landscape (snowy on ice stages).
+function mountain(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number, snow: boolean) {
+  const s = cell * 0.6;
+  ctx.fillStyle = "rgba(0,0,0,0.14)";
+  ctx.beginPath();
+  ctx.ellipse(x, y + s * 0.08, s * 0.95, s * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a lower back peak for depth
+  ctx.fillStyle = "#6b7079";
+  ctx.beginPath();
+  ctx.moveTo(x - s * 1.0, y);
+  ctx.lineTo(x - s * 0.15, y - s * 1.0);
+  ctx.lineTo(x + s * 0.7, y);
+  ctx.closePath();
+  ctx.fill();
+  // the main peak
+  const g = ctx.createLinearGradient(x, y - s * 1.25, x, y);
+  g.addColorStop(0, "#8b909b");
+  g.addColorStop(1, "#575c66");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.85, y);
+  ctx.lineTo(x + s * 0.12, y - s * 1.25);
+  ctx.lineTo(x + s, y);
+  ctx.closePath();
+  ctx.fill();
+  // snow / rock cap
+  ctx.fillStyle = snow ? "#eef4fa" : "#c2c8d2";
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.12, y - s * 1.25);
+  ctx.lineTo(x - s * 0.08, y - s * 0.86);
+  ctx.lineTo(x + s * 0.16, y - s * 0.93);
+  ctx.lineTo(x + s * 0.4, y - s * 0.82);
+  ctx.closePath();
+  ctx.fill();
 }
 
 // One signature prop for the given scenery. Kept simple + colorful so each stage
@@ -535,32 +579,86 @@ function ambEmbers(ctx: Ctx2D, w: number, h: number, cell: number, time: number)
     ctx.fill();
   }
 }
+// A small plodding camel - deliberately little (a camel is NOT bigger than a tank):
+// body, two humps, a neck up to a real head with a snout + ear, and walking legs.
 function ambCamel(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
   const span = w + cell * 8;
-  const s = cell * 0.9;
+  const s = cell * 0.5; // small, in perspective with the tanks/enemies
+  const brown = "rgba(150,105,60,0.9)";
   ctx.save();
-  ctx.translate(((time * cell * 0.6) % span) - cell * 4, h * 0.8);
-  ctx.fillStyle = "rgba(120,82,45,0.85)";
+  ctx.translate(((time * cell * 0.45) % span) - cell * 4, h * 0.82);
+  ctx.fillStyle = brown;
+  ctx.strokeStyle = brown;
+  ctx.lineCap = "round";
+  // body
   ctx.beginPath();
-  ctx.ellipse(0, -s * 0.35, s * 0.5, s * 0.26, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -s * 0.45, s * 0.55, s * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // two humps
+  ctx.beginPath();
+  ctx.arc(-s * 0.12, -s * 0.72, s * 0.2, Math.PI, 0);
+  ctx.arc(s * 0.24, -s * 0.72, s * 0.17, Math.PI, 0);
+  ctx.fill();
+  // neck up to the head
+  ctx.lineWidth = s * 0.17;
+  ctx.beginPath();
+  ctx.moveTo(s * 0.5, -s * 0.5);
+  ctx.lineTo(s * 0.72, -s * 1.02);
+  ctx.stroke();
+  // head + snout + ear
+  ctx.beginPath();
+  ctx.ellipse(s * 0.78, -s * 1.1, s * 0.16, s * 0.12, -0.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(-s * 0.12, -s * 0.58, s * 0.17, Math.PI, 0);
-  ctx.arc(s * 0.2, -s * 0.58, s * 0.15, Math.PI, 0);
+  ctx.ellipse(s * 0.93, -s * 1.02, s * 0.09, s * 0.06, 0.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(s * 0.42, -s * 0.45);
-  ctx.lineTo(s * 0.62, -s * 0.9);
-  ctx.lineTo(s * 0.78, -s * 0.85);
-  ctx.lineTo(s * 0.6, -s * 0.4);
+  ctx.moveTo(s * 0.72, -s * 1.2);
+  ctx.lineTo(s * 0.67, -s * 1.32);
+  ctx.lineTo(s * 0.79, -s * 1.22);
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(120,82,45,0.85)";
-  ctx.lineWidth = Math.max(2, s * 0.08);
+  // walking legs
+  ctx.lineWidth = s * 0.11;
   for (let l = 0; l < 4; l++) {
-    const lx = -s * 0.32 + l * s * 0.22;
+    const lx = -s * 0.35 + l * s * 0.28;
     ctx.beginPath();
-    ctx.moveTo(lx, -s * 0.15);
-    ctx.lineTo(lx + Math.sin(time * 6 + l * 1.6) * s * 0.1, s * 0.12);
+    ctx.moveTo(lx, -s * 0.22);
+    ctx.lineTo(lx + Math.sin(time * 5 + l * 1.6) * s * 0.12, s * 0.16);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// A tiny lizard that darts across the sand, tail whipping, then pauses off-screen.
+function ambLizard(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
+  const s = cell * 0.24; // tiny
+  const cycle = w + cell * 14; // travel + a long off-screen pause
+  const x = ((time * cell * 1.5) % cycle) - cell * 3;
+  if (x > w + cell * 2) return; // resting off-screen for part of the loop
+  ctx.save();
+  ctx.translate(x, h * 0.9);
+  ctx.fillStyle = "rgba(96,124,64,0.9)";
+  ctx.strokeStyle = "rgba(96,124,64,0.9)";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 0.9, s * 0.34, 0, 0, Math.PI * 2); // body
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(s * 0.95, 0, s * 0.34, s * 0.26, 0, 0, Math.PI * 2); // head
+  ctx.fill();
+  ctx.lineWidth = s * 0.28; // whipping tail
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.8, 0);
+  ctx.quadraticCurveTo(-s * 1.7, Math.sin(time * 12) * s * 0.7, -s * 2.5, Math.sin(time * 12 + 1) * s * 0.5);
+  ctx.stroke();
+  ctx.lineWidth = s * 0.16; // scurrying legs
+  for (let l = 0; l < 2; l++) {
+    const lx = -s * 0.2 + l * s * 0.8;
+    const sw = Math.sin(time * 16 + l * 3) * s * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(lx, s * 0.15);
+    ctx.lineTo(lx + sw, s * 0.55);
     ctx.stroke();
   }
   ctx.restore();
@@ -591,16 +689,22 @@ function drawAmbient(ctx: Ctx2D, w: number, h: number, cell: number, decor: Scen
       ambBirds(ctx, w, h, cell, time, 2);
       break;
     case "forest":
+      ambSparkle(ctx, w, h, cell, time); // a glinting stream along the low ground
+      ambBirds(ctx, w, h, cell, time, 2);
+      ambLizard(ctx, w, h, cell, time);
+      break;
     case "stadium":
       ambBirds(ctx, w, h, cell, time, 2);
       break;
     case "savanna":
       ambBirds(ctx, w, h, cell, time, 2);
       ambCamel(ctx, w, h, cell, time);
+      ambLizard(ctx, w, h, cell, time);
       break;
     case "desert":
     case "canyon":
       ambCamel(ctx, w, h, cell, time);
+      ambLizard(ctx, w, h, cell, time);
       ambBirds(ctx, w, h, cell, time, 1);
       break;
   }

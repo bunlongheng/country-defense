@@ -57,6 +57,7 @@ import {
   type Difficulty,
 } from "@/lib/game/waves";
 import { STAGES, TOTAL_STAGES, stageBase } from "@/lib/game/stages";
+import { loadSprite } from "@/lib/game/sprites";
 import {
   POINTS,
   saveScore,
@@ -339,6 +340,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // preload the player's flag and a handful of enemy flags up front, and pick a
   // per-game seed so invader lineups differ between playthroughs
   useEffect(() => {
+    loadSprite("/towers/fx/slime_shot.png"); // generated toxic-orb projectile art
     seedRef.current = Math.floor(Math.random() * pool.current.length);
     // arm the very first wave's auto-start (build time before invaders arrive)
     countdownEndRef.current = performance.now() + FIRST_WAVE_DELAY * 1000;

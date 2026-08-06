@@ -4,6 +4,7 @@ import type { Scenery } from "./stages.ts";
 import { TOWER_DEFS, towerStats, MAX_LEVEL } from "./towers.ts";
 import type { Particle } from "./particles.ts";
 import { getFlagImage } from "../flagImage.ts";
+import { getSprite } from "./sprites.ts";
 import { hexA } from "./math.ts";
 
 // The 2D canvas renderer, kept out of the React component so it is a pure,
@@ -1530,7 +1531,20 @@ function drawShot(
       break;
     }
     case "slime": {
-      // gooey green glob with a sticky trail
+      // if the generated toxic-orb sprite has loaded, fly IT from the barrel to
+      // the target; otherwise fall back to the drawn gooey glob
+      const sprite = getSprite("/towers/fx/slime_shot.png");
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
+      const px = a.x + (b.x - a.x) * prog;
+      const py = a.y + (b.y - a.y) * prog;
+      if (sprite) {
+        const sz = s * 0.7;
+        ctx.strokeStyle = "rgba(132,204,22,0.35)"; // faint goo trail
+        ctx.lineWidth = lw * 0.1;
+        line(ctx, a, { x: px, y: py });
+        ctx.drawImage(sprite, px - sz, py - sz, sz * 2, sz * 2);
+        break;
+      }
       ctx.strokeStyle = "rgba(132,204,22,0.5)";
       ctx.lineWidth = lw * 0.14;
       line(ctx, a, b);

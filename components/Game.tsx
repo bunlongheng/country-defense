@@ -350,6 +350,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // id of a tower being relocated (grace period only) - the next tap on an open
   // tile moves it there for free; null when not moving
   const [movingId, setMovingId] = useState<number | null>(null);
+  // drag-to-relocate: the tower currently being dragged (grace period only)
+  const dragRef = useRef<{
+    id: number;
+    type: TowerType;
+    level: number;
+    fromCol: number;
+    fromRow: number;
+    moved: boolean;
+  } | null>(null);
 
   const goldRef = useRef(START_GOLD);
   const livesRef = useRef(START_LIVES);
@@ -970,6 +979,36 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // Finger lifted: if a hold was still charging, abort it (and treat it as a quick
   // tap = close the build menu).
   const onCanvasUp = () => {
+    // finishing a drag-relocate: drop the tower on the ghost tile if it's open
+    if (dragRef.current) {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      const ghost = previewRef.current;
+      previewRef.current = null;
+      const canvas = canvasRef.current;
+      const cell = cellRef.current;
+      if (drag.moved && ghost && canvas) {
+        const { x: col, y: row } = ghost.cell;
+        const t = towers.current.find((tw) => tw.id === drag.id);
+        const taken = towers.current.some(
+          (tw) => tw.id !== drag.id && tw.cell.x === col && tw.cell.y === row,
+        );
+        if (t && isBuildable(col, row, blockedRef.current) && !taken) {
+          t.cell = { x: col, y: row };
+          playUpgrade();
+          setSelected({
+            id: t.id,
+            type: t.type,
+            level: t.level,
+            left: canvas.offsetLeft + (col + 0.5) * cell,
+            top: canvas.offsetTop + row * cell,
+          });
+        } else {
+          flash("Drop on an open tile");
+        }
+      }
+      return;
+    }
     if (!holdTimersRef.current.length) return;
     holdTimersRef.current.forEach((id) => window.clearTimeout(id));
     holdTimersRef.current = [];
@@ -983,6 +1022,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
   // Track the aim point under the pointer while arming (drives the live reticle).
   const onCanvasMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // dragging a tower to relocate it: show a ghost of it under the pointer tile
+    if (dragRef.current) {
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const cell = cellRef.current;
+      const col = Math.floor((e.clientX - rect.left) / cell);
+      const row = Math.floor((e.clientY - rect.top) / cell);
+      if (col !== dragRef.current.fromCol || row !== dragRef.current.fromRow) {
+        dragRef.current.moved = true;
+      }
+      previewRef.current = { cell: { x: col, y: row }, type: dragRef.current.type };
+      return;
+    }
     if (!nukeArmedRef.current) return;
     const rect = canvasRef.current!.getBoundingClientRect();
     const cell = cellRef.current;
@@ -1075,6 +1126,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         left: canvas.offsetLeft + (col + 0.5) * cell,
         top: canvas.offsetTop + row * cell,
       });
+      // grace period: pressing a tower picks it up so you can drag-drop it to a new
+      // tile (a quick tap without moving just leaves it selected)
+      if (phaseRef.current === "ready") {
+        dragRef.current = {
+          id: existing.id,
+          type: existing.type,
+          level: existing.level,
+          fromCol: col,
+          fromRow: row,
+          moved: false,
+        };
+        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      }
       closeMenu();
       return;
     }

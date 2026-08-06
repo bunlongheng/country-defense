@@ -1613,10 +1613,12 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               on stays open in the middle so it is never covered) */}
           {menu && (
             <>
+              {/* dim + blur the arena behind the menu so the petals are easy to read
+                  even over a tank or the road, and a tap out here closes it */}
               <button
                 aria-label="Close tower menu"
                 onPointerDown={closeMenu}
-                className="absolute inset-0 z-20 cursor-default"
+                className="absolute inset-0 z-20 cursor-default bg-black/60 backdrop-blur-[2px]"
               />
               <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
                 {/* the placement spot marker - sits on the REAL tapped tile even
@@ -1649,7 +1651,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                         top: oy * menu.step,
                         transform: "translate(-50%, -50%)",
                         borderColor: d.color,
-                        background: `radial-gradient(circle at 40% 30%, ${d.color}33, #0b0d12 88%)`,
+                        // fully opaque: a solid dark disc with a colour glow on top,
+                        // so nothing behind the petal shows through
+                        background: `radial-gradient(circle at 40% 30%, ${d.color}55, transparent 70%), #0b0d12`,
                       }}
                     >
                       <TowerChip type={type} />

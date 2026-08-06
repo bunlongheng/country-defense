@@ -233,8 +233,8 @@ function TowerChip({ type }: { type: TowerType }) {
     const ctx = cv?.getContext("2d");
     if (!cv || !ctx) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const S = 40;
-    const cell = 52;
+    const S = 52;
+    const cell = 66;
     cv.width = S * dpr;
     cv.height = S * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -248,7 +248,7 @@ function TowerChip({ type }: { type: TowerType }) {
       0,
     );
   }, [type]);
-  return <canvas ref={ref} className="h-[40px] w-[40px]" aria-hidden />;
+  return <canvas ref={ref} className="h-[52px] w-[52px]" aria-hidden />;
 }
 
 // Nearest open-ground tile to the middle of the map - where the free white Line
@@ -1162,8 +1162,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     // open the radial menu centred on the tapped tile, but keep the whole ring
     // inside the arena so no petal falls off-screen (esp. edge/corner tiles on a
     // phone). The ring is tighter on small screens.
-    const step = Math.round(Math.max(74, Math.min(110, cell * 2)));
-    const margin = step + 30; // ring radius + half a petal + breathing room
+    // ring radius: kept just wide enough for the bigger petals to sit close together
+    // (a small gap, not spread out) so they're an easy thumb target
+    const step = Math.round(Math.max(100, Math.min(116, cell * 2.2)));
+    const margin = step + 44; // ring radius + half a petal + breathing room
     const parent = canvas.parentElement!;
     const rawX = canvas.offsetLeft + col * cell + cell / 2;
     const rawY = canvas.offsetTop + row * cell + cell / 2;
@@ -1618,7 +1620,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               <button
                 aria-label="Close tower menu"
                 onPointerDown={closeMenu}
-                className="absolute inset-0 z-20 cursor-default bg-black/60 backdrop-blur-[2px]"
+                className="absolute inset-0 z-20 cursor-default bg-black/75 backdrop-blur-[3px]"
               />
               <div className="absolute z-30" style={{ left: menu.left, top: menu.top }}>
                 {/* the placement spot marker - sits on the REAL tapped tile even
@@ -1645,7 +1647,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                         if (buildAt(menu.col, menu.row, type)) closeMenu();
                       }}
                       title={`${d.name} - $${d.cost}`}
-                      className="absolute flex h-[54px] w-[54px] flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
+                      className="absolute flex h-[74px] w-[74px] flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition active:scale-90 disabled:opacity-40"
                       style={{
                         left: ox * menu.step,
                         top: oy * menu.step,

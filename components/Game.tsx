@@ -122,13 +122,17 @@ function ScorePanel({
       )}
       {r.board.length > 0 && (
         <div className="mt-3 space-y-1 text-left">
-          {r.board.slice(0, 5).map((e, i) => (
+          {r.board.slice(0, 5).map((e, i) => {
+            // older rows were saved before we stored the flag code - fall back to
+            // resolving it from the country name so every row still gets a flag
+            const fcode = e.code ?? COUNTRIES.find((c) => c.name === e.country)?.code;
+            return (
             <div key={i} className="flex items-center gap-2 text-[11px]">
               <span className="w-3 text-white/35">{i + 1}</span>
-              {e.code ? (
+              {fcode ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={flagUrl(e.code)}
+                  src={flagUrl(fcode)}
                   alt=""
                   className="h-3 w-4 shrink-0 rounded-[2px] object-cover ring-1 ring-white/20"
                 />
@@ -141,7 +145,8 @@ function ScorePanel({
                 {e.score.toLocaleString()}
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

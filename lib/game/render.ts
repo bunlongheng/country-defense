@@ -483,6 +483,129 @@ function mud(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number) 
   ctx.fill();
 }
 
+// ---- ambient, animated stage props ---------------------------------------
+// A light "alive" layer per stage theme: snow, flapping birds, rising embers, a
+// plodding camel, water glints. All positions are derived from `time`, so nothing
+// needs persistent state - it just animates over the arena.
+type Ctx2D = CanvasRenderingContext2D;
+function frnd(i: number, k: number): number {
+  const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+function ambSnow(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
+  for (let i = 0; i < 80; i++) {
+    const sp = cell * (0.5 + frnd(i, 1) * 0.7);
+    const x = (frnd(i, 2) * w + Math.sin(time * 0.7 + i) * cell * 0.4 + w) % w;
+    const y = (frnd(i, 3) * h + time * sp) % (h + 10);
+    ctx.fillStyle = `rgba(255,255,255,${0.5 + frnd(i, 5) * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(x, y, cell * (0.03 + frnd(i, 4) * 0.035), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+function ambBirds(ctx: Ctx2D, w: number, h: number, cell: number, time: number, count: number) {
+  ctx.strokeStyle = "rgba(35,35,48,0.55)";
+  ctx.lineWidth = Math.max(1.4, cell * 0.045);
+  ctx.lineCap = "round";
+  for (let k = 0; k < count; k++) {
+    const sp = cell * (0.7 + frnd(k, 6) * 0.6);
+    const dir = k % 2 === 0 ? 1 : -1;
+    const span = w + cell * 6;
+    let x = ((time * sp + frnd(k, 7) * span) % span) - cell * 3;
+    if (dir < 0) x = w - x;
+    const y = h * (0.1 + frnd(k, 8) * 0.32);
+    const ws = cell * 0.34;
+    const up = Math.sin(time * 9 + k * 2) * ws * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(x - ws, y + up);
+    ctx.quadraticCurveTo(x - ws * 0.2, y - up * 0.4, x, y);
+    ctx.quadraticCurveTo(x + ws * 0.2, y - up * 0.4, x + ws, y + up);
+    ctx.stroke();
+  }
+}
+function ambEmbers(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
+  for (let i = 0; i < 48; i++) {
+    const life = (frnd(i, 9) + time * (0.18 + frnd(i, 10) * 0.15)) % 1;
+    const x = (frnd(i, 11) * w + Math.sin(time * 1.3 + i) * cell * 0.5 + w) % w;
+    const y = h - life * h * 0.95;
+    const g = Math.round(190 - life * 160);
+    ctx.fillStyle = `rgba(255,${g},40,${(1 - life) * 0.85})`;
+    ctx.beginPath();
+    ctx.arc(x, y, cell * 0.05 * (1 - life * 0.6) + 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+function ambCamel(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
+  const span = w + cell * 8;
+  const s = cell * 0.9;
+  ctx.save();
+  ctx.translate(((time * cell * 0.6) % span) - cell * 4, h * 0.8);
+  ctx.fillStyle = "rgba(120,82,45,0.85)";
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.35, s * 0.5, s * 0.26, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-s * 0.12, -s * 0.58, s * 0.17, Math.PI, 0);
+  ctx.arc(s * 0.2, -s * 0.58, s * 0.15, Math.PI, 0);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(s * 0.42, -s * 0.45);
+  ctx.lineTo(s * 0.62, -s * 0.9);
+  ctx.lineTo(s * 0.78, -s * 0.85);
+  ctx.lineTo(s * 0.6, -s * 0.4);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,82,45,0.85)";
+  ctx.lineWidth = Math.max(2, s * 0.08);
+  for (let l = 0; l < 4; l++) {
+    const lx = -s * 0.32 + l * s * 0.22;
+    ctx.beginPath();
+    ctx.moveTo(lx, -s * 0.15);
+    ctx.lineTo(lx + Math.sin(time * 6 + l * 1.6) * s * 0.1, s * 0.12);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function ambSparkle(ctx: Ctx2D, w: number, h: number, cell: number, time: number) {
+  for (let i = 0; i < 40; i++) {
+    const tw = 0.5 + 0.5 * Math.sin(time * 3 + i * 1.7);
+    ctx.fillStyle = `rgba(255,255,255,${tw * 0.5})`;
+    ctx.fillRect(frnd(i, 12) * w, h * (0.82 + frnd(i, 13) * 0.16), cell * 0.14, 1.5);
+  }
+}
+function drawAmbient(ctx: Ctx2D, w: number, h: number, cell: number, decor: Scenery["decor"], time: number) {
+  switch (decor) {
+    case "ice":
+      ambSnow(ctx, w, h, cell, time);
+      break;
+    case "volcano":
+      ambEmbers(ctx, w, h, cell, time);
+      ambBirds(ctx, w, h, cell, time, 1);
+      break;
+    case "beach":
+      ambSparkle(ctx, w, h, cell, time);
+      ambBirds(ctx, w, h, cell, time, 3);
+      break;
+    case "river":
+    case "tropical":
+      ambSparkle(ctx, w, h, cell, time);
+      ambBirds(ctx, w, h, cell, time, 2);
+      break;
+    case "forest":
+    case "stadium":
+      ambBirds(ctx, w, h, cell, time, 2);
+      break;
+    case "savanna":
+      ambBirds(ctx, w, h, cell, time, 2);
+      ambCamel(ctx, w, h, cell, time);
+      break;
+    case "desert":
+    case "canyon":
+      ambCamel(ctx, w, h, cell, time);
+      ambBirds(ctx, w, h, cell, time, 1);
+      break;
+  }
+}
+
 export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) {
   const w = cell * GRID_COLS;
   const h = cell * GRID_ROWS;
@@ -602,6 +725,9 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // smoke + sparks on top of everything
   drawParticles(ctx, cell, s.particles);
+
+  // ambient, animated stage props (snow / birds / embers / camel / water glints)
+  drawAmbient(ctx, w, h, cell, st.scenery.decor, s.time);
 
   // nuke targeting reticle: a red blast-radius ring + crosshair over the target
   if (s.nuke) drawNukeReticle(ctx, cell, s.nuke, s.time);

@@ -654,10 +654,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       const cx = (bc.x + 0.5) * cell;
       const cy = (bc.y + 0.5) * cell - cell * 0.12 - bob;
       const size = cell * 0.98; // container so the rendered sphere ~= the old 2D one
+      // place it over the canvas regardless of how the canvas is centred/letterboxed:
+      // canvas top-left in the overlay's offset-parent space, plus the base pixel
+      const host = el.offsetParent as HTMLElement | null;
+      const cr = canvas2.getBoundingClientRect();
+      const hr = host?.getBoundingClientRect();
+      const ox = cr.left - (hr?.left ?? 0);
+      const oy = cr.top - (hr?.top ?? 0);
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
-      el.style.left = `${canvas2.offsetLeft + cx - size / 2}px`;
-      el.style.top = `${canvas2.offsetTop + cy - size / 2}px`;
+      el.style.left = `${ox + cx - size / 2}px`;
+      el.style.top = `${oy + cy - size / 2}px`;
       const over = phaseRef.current === "won" || phaseRef.current === "lost";
       el.style.opacity = over ? "0" : "1"; // the game-over overlay owns the death visual
     };
@@ -1385,11 +1392,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           {/* the home base's real 3D flag marble (same one as the country select),
               pinned over the base tile each frame; non-interactive so taps fall
               through to the arena canvas underneath */}
-          <div
-            ref={baseMarbleRef}
-            className="pointer-events-none absolute z-10"
-            style={{ left: 0, top: 0, width: 0, height: 0 }}
-          >
+          {/* left/top/size are set imperatively each frame (positionBase); keeping
+              them OUT of the JSX style stops React re-renders from resetting them */}
+          <div ref={baseMarbleRef} className="pointer-events-none absolute left-0 top-0 z-10 h-0 w-0">
             <FlagMarble3D code={code} />
           </div>
 
@@ -1607,7 +1612,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
           {/* defeat */}
           {phase === "lost" && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-black/60 py-6">
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-gradient-to-b from-black/88 to-black/96 py-6 backdrop-blur-sm">
               <FlagShatter3D code={code} />
               <div className="text-2xl font-black">{country.name}</div>
               <div className="text-sm text-white/60">

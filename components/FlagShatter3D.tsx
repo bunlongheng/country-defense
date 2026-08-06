@@ -20,9 +20,9 @@ import FlagMarble2D from "./FlagMarble2D";
 // gravity and settle on the floor, a few small top shards float up and fade.
 // Real WebGL, no lines drawn on top. Falls back to a static flag with no WebGL.
 
-const NSHARD = 13; // irregular fragments
-const HOLD = 0.16; // seconds intact before it cracks
-const GRAVITY = 4.4;
+const NSHARD = 16; // irregular fragments
+const HOLD = 0.32; // seconds you see the intact ball before it cracks
+const GRAVITY = 4.6;
 const FLOOR = -1.4;
 
 type Shard = {
@@ -128,15 +128,17 @@ function buildShards(): THREE.Group {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(c);
 
-    // A gentle outward pop plus a downward bias so most pieces fall; a few top
-    // shards float up and fade. Kept tight so the whole break stays compact.
+    // A small outward pop so it reads as the shell breaking, then gravity takes
+    // over and the pieces drop as a cluster (little sideways spread, so it looks
+    // like a ball cracking and falling, not a flat band). A couple of very top
+    // shards float up and fade.
     const dir = c.clone().normalize();
-    const floater = c.y > 0.35 && Math.random() < 0.5;
-    const vel = dir.multiplyScalar(0.28 + Math.random() * 0.4);
-    vel.x += (Math.random() - 0.5) * 0.35;
-    vel.z += (Math.random() - 0.5) * 0.35;
-    if (floater) vel.y = 0.4 + Math.random() * 0.35;
-    else vel.y += 0.15;
+    const floater = c.y > 0.55 && Math.random() < 0.4;
+    const vel = dir.multiplyScalar(0.16 + Math.random() * 0.22);
+    vel.x += (Math.random() - 0.5) * 0.18;
+    vel.z += (Math.random() - 0.5) * 0.18;
+    if (floater) vel.y = 0.35 + Math.random() * 0.3;
+    else vel.y += 0.1;
     const spin = new THREE.Vector3(
       Math.random() - 0.5,
       Math.random() - 0.5,

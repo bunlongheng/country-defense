@@ -1306,15 +1306,25 @@ function drawShot(
       break;
     }
     case "rapid": {
-      // a little bullet with a short tracer
-      ctx.strokeStyle = "rgba(244,114,182,0.5)";
-      ctx.lineWidth = lw * 0.05;
-      const mid = { x: b.x + (a.x - b.x) * 0.3, y: b.y + (a.y - b.y) * 0.3 };
-      line(ctx, mid, b);
-      ctx.fillStyle = "#fce7f3";
+      // SMOKE: a puff drifts from the barrel to the target and chokes whoever it hits
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
+      const px = a.x + (b.x - a.x) * prog;
+      const py = a.y + (b.y - a.y) * prog;
+      const puffR = s * (0.12 + prog * 0.18);
+      const g = ctx.createRadialGradient(px, py, 1, px, py, puffR);
+      g.addColorStop(0, "rgba(214,214,222,0.8)");
+      g.addColorStop(1, "rgba(120,120,132,0)");
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, s * 0.06, 0, Math.PI * 2);
+      ctx.arc(px, py, puffR, 0, Math.PI * 2);
       ctx.fill();
+      const mp = Math.max(0, 1 - prog * 2); // little muzzle puff
+      if (mp > 0) {
+        ctx.fillStyle = `rgba(205,205,212,${mp * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, s * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
     }
     case "sniper": {
@@ -1327,64 +1337,76 @@ function drawShot(
       break;
     }
     case "cannon": {
-      // a blazing FIREBALL with a fiery comet trail - the cannon shoots fire, and
-      // it's bright so you can always see it against the dark ground
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const headR = s * 0.3;
+      // a blazing FIREBALL that visibly flies OUT of the barrel: a muzzle flash at
+      // the tank, then a molten fireball with a fiery trail streaking to the target
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
+      const px = a.x + (b.x - a.x) * prog;
+      const py = a.y + (b.y - a.y) * prog;
+      const headR = s * 0.28;
       ctx.save();
       ctx.globalCompositeOperation = "lighter"; // fire adds up where it overlaps
       ctx.lineCap = "round";
-      // comet trail: a tapering hot streak from the muzzle up to the fireball
-      const tail = { x: b.x - Math.cos(ang) * s * 0.7, y: b.y - Math.sin(ang) * s * 0.7 };
-      const tg = ctx.createLinearGradient(tail.x, tail.y, b.x, b.y);
+      // MUZZLE FLASH: fire erupting from the barrel, brightest as the shot leaves
+      const mf = Math.max(0, 1 - prog * 2.2);
+      if (mf > 0) {
+        const mg = ctx.createRadialGradient(a.x, a.y, 1, a.x, a.y, s * 0.55 * mf + 1);
+        mg.addColorStop(0, `rgba(255,240,190,${mf})`);
+        mg.addColorStop(0.5, `rgba(255,140,40,${mf * 0.7})`);
+        mg.addColorStop(1, "rgba(255,80,0,0)");
+        ctx.fillStyle = mg;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, s * 0.55 * mf + 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // fiery trail from the muzzle to the flying fireball
+      const tg = ctx.createLinearGradient(a.x, a.y, px, py);
       tg.addColorStop(0, "rgba(249,115,22,0)");
-      tg.addColorStop(0.55, "rgba(249,115,22,0.55)");
-      tg.addColorStop(1, "rgba(255,220,120,0.9)");
+      tg.addColorStop(1, "rgba(255,215,120,0.9)");
       ctx.strokeStyle = tg;
-      ctx.lineWidth = headR * 1.1;
-      line(ctx, tail, b);
-      // soft orange glow halo around the fireball
-      const glow = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, headR * 2.3);
+      ctx.lineWidth = headR;
+      line(ctx, a, { x: px, y: py });
+      // orange glow halo around the fireball
+      const glow = ctx.createRadialGradient(px, py, 1, px, py, headR * 2.3);
       glow.addColorStop(0, "rgba(255,150,40,0.75)");
       glow.addColorStop(1, "rgba(255,80,0,0)");
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, headR * 2.3, 0, Math.PI * 2);
+      ctx.arc(px, py, headR * 2.3, 0, Math.PI * 2);
       ctx.fill();
-      // flame licks flicking off the trailing edge (jittered per shot)
-      ctx.fillStyle = "rgba(255,190,70,0.9)";
-      for (let k = 0; k < 3; k++) {
-        const fa = ang + Math.PI + (k - 1) * 0.55 + pr.jitter;
-        const fl = headR * (0.95 + (k % 2) * 0.55);
-        ctx.beginPath();
-        ctx.arc(b.x + Math.cos(fa) * fl, b.y + Math.sin(fa) * fl, headR * 0.34, 0, Math.PI * 2);
-        ctx.fill();
-      }
       // molten core: white-hot -> yellow -> orange -> red
-      const core = ctx.createRadialGradient(b.x - headR * 0.25, b.y - headR * 0.25, 1, b.x, b.y, headR);
+      const core = ctx.createRadialGradient(px - headR * 0.25, py - headR * 0.25, 1, px, py, headR);
       core.addColorStop(0, "rgba(255,255,245,1)");
       core.addColorStop(0.35, "#fde047");
       core.addColorStop(0.7, "#f97316");
       core.addColorStop(1, "#dc2626");
       ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, headR, 0, Math.PI * 2);
+      ctx.arc(px, py, headR, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
       break;
     }
     case "frost": {
-      // icy shard + a little snowflake burst at the target
-      ctx.strokeStyle = "rgba(191,219,254,0.7)";
-      ctx.lineWidth = lw * 0.05;
-      line(ctx, a, b);
-      ctx.strokeStyle = "#dbeafe";
-      ctx.lineWidth = 1.5;
-      for (let k = 0; k < 3; k++) {
-        const ang = (k / 3) * Math.PI;
+      // WATER: a droplet flies from the barrel, then a splash ring on the target
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
+      const px = a.x + (b.x - a.x) * prog;
+      const py = a.y + (b.y - a.y) * prog;
+      ctx.strokeStyle = "rgba(96,165,250,0.45)"; // faint water streak
+      ctx.lineWidth = lw * 0.06;
+      line(ctx, a, { x: px, y: py });
+      const dg = ctx.createRadialGradient(px - s * 0.03, py - s * 0.03, 1, px, py, s * 0.11);
+      dg.addColorStop(0, "#e0f2fe");
+      dg.addColorStop(1, "#2563eb");
+      ctx.fillStyle = dg;
+      ctx.beginPath();
+      ctx.arc(px, py, s * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+      if (prog > 0.72) {
+        const sp = (prog - 0.72) / 0.28; // expanding splash ring at impact
+        ctx.strokeStyle = `rgba(147,197,253,${(1 - sp) * 0.9})`;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(b.x - Math.cos(ang) * s * 0.12, b.y - Math.sin(ang) * s * 0.12);
-        ctx.lineTo(b.x + Math.cos(ang) * s * 0.12, b.y + Math.sin(ang) * s * 0.12);
+        ctx.arc(b.x, b.y, s * 0.1 + sp * s * 0.4, 0, Math.PI * 2);
         ctx.stroke();
       }
       break;

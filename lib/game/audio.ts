@@ -95,8 +95,12 @@ function noise(dur: number, vol: number, freq: number) {
 // Per-tower firing voice, tuned so each weapon reads by ear.
 const SHOOT: Record<TowerType, () => void> = {
   laser: () => blip(880, 0.09, "sawtooth", 0.5, 1500),
-  rapid: () => blip(560, 0.05, "square", 0.35),
-  frost: () => blip(1200, 0.14, "sine", 0.4, 700),
+  rapid: () => noise(0.09, 0.16, 1300), // soft airy "pfft" of smoke
+  frost: () => {
+    // a watery splash: a quick liquid blip + a little wet spatter
+    blip(820, 0.09, "sine", 0.32, 260);
+    noise(0.07, 0.14, 2200);
+  },
   slime: () => blip(240, 0.16, "sine", 0.6, 90),
   cannon: () => {
     blip(140, 0.18, "square", 0.7, 60);

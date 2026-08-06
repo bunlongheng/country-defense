@@ -51,8 +51,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
   },
   frost: {
     type: "frost",
-    name: "Frost",
-    blurb: "Freezes enemies solid, no damage",
+    name: "Water",
+    blurb: "Water blast that splashes, slows and freezes foes",
     color: "#60a5fa",
     icon: "❄",
     cost: 55,
@@ -79,16 +79,16 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
   },
   rapid: {
     type: "rapid",
-    name: "Rapid",
-    blurb: "Machine-fast, short range",
+    name: "Smoke",
+    blurb: "Fast puffs of smoke that choke and slow foes",
     color: "#f472b6",
     icon: "✦",
     cost: 60,
     range: 2,
-    damage: 3, // least damage per shot on purpose - it fires so fast it'd be OP otherwise
-    fireRate: 4, // still the fastest gun, just low per-shot so ~12 dps, not overpowered
+    damage: 3, // small damage per puff; its job is the slow, and it fires fast
+    fireRate: 4,
     splash: 0,
-    slow: 0,
+    slow: 0.25, // the smoke chokes enemies - a mild lingering slow
     chain: 0,
   },
   tesla: {

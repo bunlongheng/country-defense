@@ -134,21 +134,22 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     slow: 0,
     chain: 0,
   },
-  // the special white ROAMER: given free at the start, it drives itself around the
-  // map (see stepRoamers) and shoots white frost that freezes the target AND blasts
-  // half its health away per shot. damage is a % handled in fireTowers, not here.
+  // the special white LINE LASER: given free at the start, it stays where you put it
+  // and fires a white beam straight across the whole screen at its row, hitting every
+  // enemy in that horizontal line (handled in fireTowers). You can reposition it at
+  // any time - it's special.
   roamer: {
     type: "roamer",
-    name: "Frost Rover",
-    blurb: "A self-driving tank: freezes a foe solid and shears off half its health",
+    name: "Line Laser",
+    blurb: "A stationary beam tank: fires a white laser straight across its whole row",
     color: "#eef2f7", // near-white
-    icon: "❄",
+    icon: "—",
     cost: 0, // free - you start with one
-    range: 2.7,
-    damage: 0, // % damage applied in fireTowers (50% of the target's max HP)
-    fireRate: 1.1,
+    range: 30, // effectively the whole screen (the beam spans full width)
+    damage: 16, // per shot, to EVERY enemy in the beam's row
+    fireRate: 1.2,
     splash: 0,
-    slow: 0.5, // during freeze-immunity it still slows
+    slow: 0,
     chain: 0,
   },
 };

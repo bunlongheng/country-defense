@@ -75,7 +75,6 @@ import {
   reapDead,
   ageProjectiles,
   resetProjectileIds,
-  stepRoamers,
 } from "@/lib/game/engine";
 import type { Particle } from "@/lib/game/particles";
 import {
@@ -418,6 +417,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       })
       .catch(() => {});
     pool.current.slice(0, 30).forEach((c) => loadFlagImage(c.code).catch(() => {}));
+    // the free white Line Laser also needs to exist on the very first board (stage 1);
+    // resetBoard covers restarts and later stages
+    if (!towers.current.some((t) => t.type === "roamer")) {
+      const rc = { x: Math.floor(GRID_COLS / 2), y: Math.floor(GRID_ROWS / 2) };
+      towers.current.push({
+        id: nextTowerId.current++,
+        type: "roamer",
+        cell: rc,
+        level: 1,
+        cooldown: 0,
+        pos: { x: rc.x, y: rc.y },
+      });
+    }
   }, [code]);
 
   // ---- wave control ------------------------------------------------------
@@ -469,7 +481,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     projectiles.current = [];
     time.current = 0;
     nextTowerId.current = 1;
-    // one free self-roaming Frost Rover per board, starting mid-map
+    // one free white Line Laser per board, placed mid-map (reposition it anytime)
     const rc = { x: Math.floor(GRID_COLS / 2), y: Math.floor(GRID_ROWS / 2) };
     towers.current.push({
       id: nextTowerId.current++,
@@ -478,7 +490,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       level: 1,
       cooldown: 0,
       pos: { x: rc.x, y: rc.y },
-      wander: { x: rc.x, y: rc.y },
     });
     seedRef.current = Math.floor(Math.random() * pool.current.length);
     goldRef.current = START_GOLD;
@@ -773,9 +784,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         }
       }
 
-      // the self-roaming tank patrols every frame, wave or grace period alike
-      stepRoamers(towers.current, dt, GRID_COLS, GRID_ROWS);
-
       // the base smokes past half-health, then burns as it nears death
       const hurtFrac = 1 - livesRef.current / START_LIVES;
       if (hurtFrac > 0.5 && Math.random() < dt * (hurtFrac > 0.8 ? 12 : 5))
@@ -985,21 +993,34 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       if (drag.moved && ghost && canvas) {
         const { x: col, y: row } = ghost.cell;
         const t = towers.current.find((tw) => tw.id === drag.id);
-        const taken = towers.current.some(
-          (tw) => tw.id !== drag.id && tw.cell.x === col && tw.cell.y === row,
-        );
-        if (t && isBuildable(col, row, blockedRef.current) && !taken) {
-          t.cell = { x: col, y: row };
-          playUpgrade();
+        const inBounds = col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS;
+        const place = () =>
           setSelected({
-            id: t.id,
-            type: t.type,
-            level: t.level,
+            id: t!.id,
+            type: t!.type,
+            level: t!.level,
             left: canvas.offsetLeft + (col + 0.5) * cell,
             top: canvas.offsetTop + row * cell,
           });
-        } else {
-          flash("Drop on an open tile");
+        if (t && t.type === "roamer") {
+          // the white laser drops anywhere on the board (its row = its beam line)
+          if (inBounds) {
+            t.cell = { x: col, y: row };
+            t.pos = { x: col, y: row };
+            playUpgrade();
+            place();
+          }
+        } else if (t) {
+          const taken = towers.current.some(
+            (tw) => tw.id !== drag.id && tw.cell.x === col && tw.cell.y === row,
+          );
+          if (isBuildable(col, row, blockedRef.current) && !taken) {
+            t.cell = { x: col, y: row };
+            playUpgrade();
+            place();
+          } else {
+            flash("Drop on an open tile");
+          }
         }
       }
       return;
@@ -1081,6 +1102,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         left: canvas.offsetLeft + (roamer.pos.x + 0.5) * cell,
         top: canvas.offsetTop + roamer.pos.y * cell,
       });
+      // the white laser is special: pick it up and drag it anywhere, ANY time (even
+      // mid-wave), not just the grace period
+      dragRef.current = {
+        id: roamer.id,
+        type: roamer.type,
+        level: roamer.level,
+        fromCol: Math.round(roamer.pos.x),
+        fromRow: Math.round(roamer.pos.y),
+        moved: false,
+      };
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       closeMenu();
       return;
     }
@@ -1686,8 +1718,12 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                   </button>
                 )}
               </div>
-              {phase === "ready" && selected.type !== "roamer" && (
-                <div className="mt-2 text-[11px] text-white/50">Drag me to move</div>
+              {selected.type === "roamer" ? (
+                <div className="mt-2 text-[11px] text-white/50">Drag me anywhere, anytime</div>
+              ) : (
+                phase === "ready" && (
+                  <div className="mt-2 text-[11px] text-white/50">Drag me to move</div>
+                )
               )}
             </div>
           )}

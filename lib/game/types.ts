@@ -41,8 +41,7 @@ export interface Tower {
   level: number; // 1..MAX_LEVEL
   cooldown: number; // seconds until it can fire again
   aim?: number; // barrel angle (radians); tracks the current target, holds last on none
-  pos?: Vec2; // continuous position for the roaming tank (falls back to cell centre)
-  wander?: Vec2; // the roamer's current drift target (tile coords)
+  pos?: Vec2; // free position for the white Line Laser (falls back to the cell centre)
 }
 
 export interface Projectile {

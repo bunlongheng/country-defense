@@ -629,19 +629,26 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
     ctx.stroke();
   }
 
-  // towers (the roamer draws at its live drifting position, not a fixed cell)
+  // towers (the white Line Laser draws at its free position, not a fixed cell)
   for (const t of s.towers) {
     const p = toPx(t.pos ?? t.cell, cell);
     if (t.id === s.selectedId) {
-      const stats = towerStats(t.type, t.level);
       const def = TOWER_DEFS[t.type];
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
-      ctx.fillStyle = hexA(def.color, 0.08);
-      ctx.fill();
-      ctx.strokeStyle = hexA(def.color, 0.5);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      if (t.type === "roamer") {
+        // the laser's reach is its whole row - show a beam band, not a range circle
+        const band = cell * 0.55;
+        ctx.fillStyle = hexA(def.color, 0.14);
+        ctx.fillRect(0, p.y - band, cell * GRID_COLS, band * 2);
+      } else {
+        const stats = towerStats(t.type, t.level);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
+        ctx.fillStyle = hexA(def.color, 0.08);
+        ctx.fill();
+        ctx.strokeStyle = hexA(def.color, 0.5);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
     }
     drawTower(ctx, p, cell, t, s.code, s.time);
   }
@@ -650,16 +657,23 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   if (s.preview) {
     const p = toPx(s.preview.cell, cell);
     const def = TOWER_DEFS[s.preview.type];
-    const stats = towerStats(s.preview.type, 1);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
-    ctx.fillStyle = hexA(def.color, 0.1);
-    ctx.fill();
-    ctx.setLineDash([7, 6]);
-    ctx.strokeStyle = hexA(def.color, 0.8);
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (s.preview.type === "roamer") {
+      // dragging the laser: preview the beam row it will rake, not a range circle
+      const band = cell * 0.55;
+      ctx.fillStyle = hexA(def.color, 0.16);
+      ctx.fillRect(0, p.y - band, cell * GRID_COLS, band * 2);
+    } else {
+      const stats = towerStats(s.preview.type, 1);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, stats.range * cell, 0, Math.PI * 2);
+      ctx.fillStyle = hexA(def.color, 0.1);
+      ctx.fill();
+      ctx.setLineDash([7, 6]);
+      ctx.strokeStyle = hexA(def.color, 0.8);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     roundRect(ctx, s.preview.cell.x * cell + 3, s.preview.cell.y * cell + 3, cell - 6, cell - 6, cell * 0.12);
     ctx.strokeStyle = hexA(def.color, 0.9);
     ctx.lineWidth = 2.5;
@@ -1229,7 +1243,14 @@ export function drawTower(
   } else if (t.type === "frost") {
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "roamer") {
-    drawSnowflake(ctx, p.x, p.y, R * 1.05, "#2563eb"); // blue flake reads on the white rover
+    // a thin dark bar across the white dome, hinting the horizontal beam (no snow)
+    ctx.strokeStyle = "rgba(40,50,70,0.7)";
+    ctx.lineWidth = Math.max(1.5, R * 0.1);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(p.x - R * 0.32, p.y);
+    ctx.lineTo(p.x + R * 0.32, p.y);
+    ctx.stroke();
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
@@ -1671,7 +1692,20 @@ function drawShot(
       ctx.restore();
       break;
     }
-    case "roamer": // the Frost Rover fires the same frosty spray as the Water tower
+    case "roamer": {
+      // a white LINE LASER raked straight across the row: soft glow + bright core
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(200,225,255,0.28)";
+      ctx.lineWidth = lw * 0.45 * pr.scale;
+      line(ctx, a, b);
+      ctx.strokeStyle = "rgba(230,244,255,0.9)";
+      ctx.lineWidth = lw * 0.16 * pr.scale;
+      line(ctx, a, b);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = lw * 0.06;
+      line(ctx, a, b);
+      break;
+    }
     case "frost": {
       // WATER: a spurt of SEPARATE droplets flies from the barrel (not a beam),
       // then a splash of droplets bursts on the target

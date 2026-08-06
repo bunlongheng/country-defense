@@ -28,7 +28,7 @@ const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 // still applies its slow, so the enemy always creeps forward and the wave ends.
 function markEffect(enemy: Enemy, type: string, time: number) {
   if (type === "tesla") enemy.shockUntil = time + SHOCK_DURATION;
-  else if (type === "frost" || type === "roamer") {
+  else if (type === "frost") {
     if (time >= (enemy.freezeImmuneUntil ?? 0)) {
       enemy.frozenUntil = time + FREEZE_DURATION;
       enemy.freezeImmuneUntil = enemy.frozenUntil + FREEZE_IMMUNE;
@@ -70,52 +70,6 @@ export function moveEnemies(
   return { survivors, leaked };
 }
 
-const ROAMER_SPEED = 1.1; // tiles per second - a slow tank crawl
-
-// Pick the next grid cell to drive to: one orthogonal neighbour (N/S/E/W, never
-// diagonal), staying on the board. Keeps the roamer riding the grid like a tank.
-function nextRoamerCell(pos: Vec2, cols: number, rows: number): Vec2 {
-  const cx = Math.round(pos.x);
-  const cy = Math.round(pos.y);
-  const dirs = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ].filter(([dx, dy]) => {
-    const nx = cx + dx;
-    const ny = cy + dy;
-    return nx >= 0 && nx <= cols - 1 && ny >= 0 && ny <= rows - 1;
-  });
-  const [dx, dy] = dirs[Math.floor(Math.random() * dirs.length)] ?? [0, 0];
-  return { x: cx + dx, y: cy + dy };
-}
-
-// Drive the self-roaming tank cell-to-cell along the grid (one orthogonal step at a
-// time), picking a fresh neighbour each time it arrives, so it crawls the board like
-// a real tank. Runs every frame (even between waves) so it's always alive.
-export function stepRoamers(towers: Tower[], dt: number, cols: number, rows: number) {
-  for (const t of towers) {
-    if (t.type !== "roamer") continue;
-    if (!t.pos) t.pos = { x: t.cell.x, y: t.cell.y };
-    if (!t.wander) t.wander = nextRoamerCell(t.pos, cols, rows);
-    const dx = t.wander.x - t.pos.x;
-    const dy = t.wander.y - t.pos.y;
-    const remaining = Math.abs(dx) + Math.abs(dy); // orthogonal distance to the cell
-    const stepLen = ROAMER_SPEED * dt;
-    if (remaining <= stepLen + 1e-4) {
-      // arrived: snap onto the cell, then choose the next neighbour to drive to
-      t.pos = { x: t.wander.x, y: t.wander.y };
-      t.cell = { x: Math.round(t.wander.x), y: Math.round(t.wander.y) };
-      t.wander = nextRoamerCell(t.pos, cols, rows);
-    } else if (Math.abs(dx) > 1e-4) {
-      t.pos.x += Math.sign(dx) * Math.min(Math.abs(dx), stepLen);
-    } else {
-      t.pos.y += Math.sign(dy) * Math.min(Math.abs(dy), stepLen);
-    }
-  }
-}
-
 let projId = 1;
 export function resetProjectileIds() {
   projId = 1;
@@ -140,6 +94,34 @@ export function fireTowers(
   const projectiles: Projectile[] = [];
   for (const tower of towers) {
     tower.cooldown -= dt;
+
+    // the white LINE LASER: a stationary special tank that fires a beam straight
+    // across the whole screen at its own row, hitting every enemy in that horizontal
+    // band at once. No target picking, no aiming - it just rakes its line.
+    if (tower.type === "roamer") {
+      const c = towerCenter(tower);
+      tower.aim = 0; // barrel points along the beam (to the right)
+      if (tower.cooldown > 0) continue;
+      const rs = towerStats(tower.type, tower.level);
+      tower.cooldown = 1 / rs.fireRate;
+      const BAND = 0.55; // beam half-height, in tiles
+      for (const e of enemies) {
+        if (e.hp > 0 && Math.abs(e.pos.y - c.y) <= BAND) applyHit(e, rs.damage, 0, time);
+      }
+      // a full-width white beam tracer across the row (the canvas clips it to edges)
+      projectiles.push({
+        id: projId,
+        from: { x: -2, y: c.y },
+        to: { x: 200, y: c.y },
+        targetId: -1,
+        type: "roamer",
+        ttl: 0.12,
+        jitter: boltJitter(projId++),
+        scale: 1 + (tower.level - 1) * 0.15,
+      });
+      continue;
+    }
+
     const target = pickTarget(tower, enemies);
     const center = towerCenter(tower);
     // aim at the target while one is in range; otherwise face the enemy ENTRY so
@@ -178,11 +160,8 @@ export function fireTowers(
       continue;
     }
 
-    // the roamer shears off half the target's max health per shot (heavy % damage,
-    // never a clean one-shot) on top of freezing it; everyone else deals flat damage
-    const dmg = tower.type === "roamer" ? Math.ceil(target.maxHp * 0.5) : stats.damage;
     // primary hit
-    applyHit(target, dmg, stats.slow, time, slowDur);
+    applyHit(target, stats.damage, stats.slow, time, slowDur);
     markEffect(target, tower.type, time);
     projectiles.push({
       id: projId,

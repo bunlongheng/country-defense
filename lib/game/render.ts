@@ -564,7 +564,7 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
 
   // home base: a spinning flag sphere floating above a cool themed pedestal.
   // As it loses lives it reddens, then smokes, then catches fire.
-  drawBase(ctx, toPx(s.baseCell ?? BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives, s.code);
+  drawBase(ctx, toPx(s.baseCell ?? BASE_CELL, cell), cell, s.palette, s.time, 1 - s.lives / s.maxLives);
 
   // enemies
   for (const e of s.enemies) {
@@ -1637,35 +1637,6 @@ function sphereShade(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: n
 
 // Shattered look for a dead base sphere: jagged branching cracks + char marks.
 // Deterministic (sin-based jitter) so it does not shimmer frame to frame.
-function drawCracks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
-  ctx.strokeStyle = "rgba(15,10,8,0.9)";
-  ctx.lineCap = "round";
-  for (let c = 0; c < 6; c++) {
-    let x = cx + Math.cos(c * 1.7) * r * 0.12;
-    let y = cy + Math.sin(c * 1.7) * r * 0.12;
-    let ang = c * (Math.PI * 2) / 6 + 0.4;
-    ctx.lineWidth = r * 0.07;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    for (let s = 0; s < 5; s++) {
-      ang += Math.sin(c * 3.1 + s * 2.7) * 0.7;
-      const seg = r * 0.26;
-      x += Math.cos(ang) * seg;
-      y += Math.sin(ang) * seg;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-  // a few charred blotches
-  ctx.fillStyle = "rgba(20,15,12,0.55)";
-  for (let i = 0; i < 4; i++) {
-    const a = i * 1.9;
-    ctx.beginPath();
-    ctx.arc(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.45, r * 0.16, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
 function specular(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
   ctx.beginPath();
   ctx.ellipse(cx + LIGHT.x * r * 0.75, cy + LIGHT.y * r * 0.75, r * 0.26, r * 0.17, -Math.PI / 5, 0, Math.PI * 2);
@@ -1682,7 +1653,6 @@ function drawBase(
   palette: string[],
   time: number,
   hurt: number, // fraction of lives lost, 0 (pristine) .. 1 (dead)
-  code: string,
 ) {
   const accent = palette[0] ?? "#38bdf8";
   const r = cell * 0.4;
@@ -1792,22 +1762,9 @@ function drawBase(
   ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
   ctx.fill();
 
-  // the spinning glossy flag marble, drawn in 2D so it works on EVERY device
-  // (the old WebGL overlay broke into a white box on some browsers)
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-  paintFlag(ctx, getFlagImage(code), cx, cy, r, time * cell * 0.55); // scroll = spin
-  sphereShade(ctx, cx, cy, r); // 3D spherical shading
-  if (red > 0) {
-    ctx.fillStyle = `rgba(220,38,38,${Math.min(0.5, red * 0.55)})`;
-    ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
-  }
-  // dead: the sphere is shattered - jagged cracks + charred spots
-  if (hurt >= 0.999) drawCracks(ctx, cx, cy, r);
-  ctx.restore();
-  specular(ctx, cx, cy, r); // bright glossy glint
+  // the spinning glossy flag marble itself is a real 3D WebGL sphere rendered as
+  // a React overlay pinned over this tile (same marble as the country select), so
+  // nothing is drawn here for it - only the pad, halo, fire and health bar are 2D
 
   // as it dies the base catches fire, and on death it burns hardest
   if (hurt > 0.5) drawFire(ctx, cx, cy - r * 0.6, r * 1.1, hurt > 0.75 ? 2 : 1, time, 0);

@@ -15,6 +15,7 @@ import {
 import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
 import FlagShatter3D from "./FlagShatter3D";
+import FlagMarble3D from "./FlagMarble3D";
 import {
   unlockAudio,
   toggleMute,
@@ -252,6 +253,7 @@ function TowerChip({ type }: { type: TowerType }) {
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const baseMarbleRef = useRef<HTMLDivElement>(null); // 3D flag marble pinned over the base tile
 
   // mutable simulation state (kept in refs so the rAF loop never re-renders)
   const enemies = useRef<Enemy[]>([]);
@@ -639,6 +641,27 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         : null;
     };
 
+    // pin the 3D flag-marble overlay right over the base tile, matching the same
+    // float/bob and size drawBase would have used for the 2D sphere it replaced
+    const positionBase = (now: number) => {
+      const el = baseMarbleRef.current;
+      const canvas2 = canvasRef.current;
+      if (!el || !canvas2) return;
+      const cell = cellRef.current;
+      const bc = baseRef.current;
+      const t = now / 1000;
+      const bob = Math.sin(t * 1.6) * cell * 0.07;
+      const cx = (bc.x + 0.5) * cell;
+      const cy = (bc.y + 0.5) * cell - cell * 0.12 - bob;
+      const size = cell * 0.98; // container so the rendered sphere ~= the old 2D one
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.left = `${canvas2.offsetLeft + cx - size / 2}px`;
+      el.style.top = `${canvas2.offsetTop + cy - size / 2}px`;
+      const over = phaseRef.current === "won" || phaseRef.current === "lost";
+      el.style.opacity = over ? "0" : "1"; // the game-over overlay owns the death visual
+    };
+
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
@@ -671,6 +694,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           noBuild: noBuildRef.current,
           baseCell: baseRef.current,
         });
+        positionBase(now);
         raf = requestAnimationFrame(frame);
         return;
       }
@@ -726,6 +750,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         noBuild: noBuildRef.current,
         baseCell: baseRef.current,
       });
+      positionBase(now);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -1356,6 +1381,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               nukeArmed ? "cursor-crosshair" : ""
             }`}
           />
+
+          {/* the home base's real 3D flag marble (same one as the country select),
+              pinned over the base tile each frame; non-interactive so taps fall
+              through to the arena canvas underneath */}
+          <div
+            ref={baseMarbleRef}
+            className="pointer-events-none absolute z-10"
+            style={{ left: 0, top: 0, width: 0, height: 0 }}
+          >
+            <FlagMarble3D code={code} />
+          </div>
 
           {/* wave (bottom-left) + score (bottom-right) - split to the corners */}
           <div className="pointer-events-none absolute bottom-2 left-2 z-30 flex items-center gap-1.5 rounded-lg bg-black/45 px-2.5 py-1 text-sm font-medium text-white sm:text-base">

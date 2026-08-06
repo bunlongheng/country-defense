@@ -20,11 +20,10 @@ import FlagMarble2D from "./FlagMarble2D";
 // gravity and settle on the floor, a few small top shards float up and fade.
 // Real WebGL, no lines drawn on top. Falls back to a static flag with no WebGL.
 
-const NB = 4; // latitude bands
-const NS = 8; // longitude sectors
-const HOLD = 0.18; // seconds intact before it cracks
-const GRAVITY = 5.2;
-const FLOOR = -1.55;
+const NSHARD = 13; // irregular fragments
+const HOLD = 0.16; // seconds intact before it cracks
+const GRAVITY = 4.4;
+const FLOOR = -1.4;
 
 type Shard = {
   vel: THREE.Vector3;
@@ -33,71 +32,129 @@ type Shard = {
   floater: boolean;
 };
 
-// Build the shell once: each shard is a curved patch of the same sphere,
-// recentred on its own centroid so it can tumble in place; positioned at that
-// centroid, the shards reconstruct the intact marble.
+function randDir(): THREE.Vector3 {
+  const u = Math.random() * 2 - 1;
+  const t = Math.random() * Math.PI * 2;
+  const s = Math.sqrt(1 - u * u);
+  return new THREE.Vector3(s * Math.cos(t), u, s * Math.sin(t));
+}
+
+// Equirectangular UV so each shard samples the right slice of the flag, matching
+// the spinning marble. atan2 wraps at the back seam, so callers fix seam faces.
+function uvOf(x: number, y: number, z: number): [number, number] {
+  return [
+    0.5 + Math.atan2(x, z) / (2 * Math.PI),
+    0.5 - Math.asin(Math.max(-1, Math.min(1, y))) / Math.PI,
+  ];
+}
+
+// Fracture the sphere into IRREGULAR shards: scatter random crack seeds over an
+// icosphere and hand each triangle to its nearest seed, so pieces come out as
+// jagged fragments (not the neat rectangular tiles a lat/long grid produced).
+// Each shard is recentred on its own centroid so it can tumble in place; parked
+// at that centroid, the shards reconstruct the intact marble.
 function buildShards(): THREE.Group {
   const g = new THREE.Group();
-  for (let b = 0; b < NB; b++) {
-    for (let s = 0; s < NS; s++) {
-      const geo = new THREE.SphereGeometry(
-        1,
-        6,
-        5,
-        (s * 2 * Math.PI) / NS,
-        (2 * Math.PI) / NS,
-        (b * Math.PI) / NB,
-        Math.PI / NB,
-      );
-      geo.computeBoundingBox();
-      const c = new THREE.Vector3();
-      geo.boundingBox!.getCenter(c);
-      geo.translate(-c.x, -c.y, -c.z);
+  const src = new THREE.IcosahedronGeometry(1, 3).toNonIndexed();
+  const pos = src.getAttribute("position") as THREE.BufferAttribute;
+  const faces = pos.count / 3;
 
-      const mat = new THREE.MeshPhysicalMaterial({
-        color: "#c9ccd1",
-        roughness: 0.18,
-        metalness: 0,
-        clearcoat: 1,
-        clearcoatRoughness: 0.06,
-        envMapIntensity: 1.15,
-        side: THREE.DoubleSide,
-        transparent: true,
-      });
-
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(c);
-
-      // Explode outward from the shell, plus a downward bias so most pieces
-      // fall. Top-band shards get a floaty upward pop and barely any gravity.
-      const dir = c.clone().normalize();
-      const floater = b === 0 && (b * NS + s) % 2 === 0;
-      const out = 0.5 + ((b * NS + s) % 5) * 0.14;
-      const vel = dir.multiplyScalar(out);
-      vel.x += (((s * 7 + b * 13) % 10) / 10 - 0.5) * 0.5;
-      vel.z += (((s * 3 + b * 5) % 10) / 10 - 0.5) * 0.5;
-      if (floater) vel.y = 0.6 + (s % 3) * 0.2;
-      else vel.y += 0.2;
-      const spin = new THREE.Vector3(
-        ((s * 5 + b) % 7) - 3,
-        ((s + b * 3) % 7) - 3,
-        ((s * 2 + b) % 7) - 3,
-      ).multiplyScalar(1.1);
-      (mesh.userData as { shard: Shard }).shard = {
-        vel,
-        spin,
-        gScale: floater ? 0.16 : 1,
-        floater,
-      };
-      g.add(mesh);
+  const seeds = Array.from({ length: NSHARD }, randDir);
+  const buckets: number[][] = seeds.map(() => []);
+  const cen = new THREE.Vector3();
+  for (let f = 0; f < faces; f++) {
+    cen.set(0, 0, 0);
+    for (let j = 0; j < 3; j++) {
+      cen.x += pos.getX(f * 3 + j) / 3;
+      cen.y += pos.getY(f * 3 + j) / 3;
+      cen.z += pos.getZ(f * 3 + j) / 3;
     }
+    cen.normalize();
+    let best = 0;
+    let bestDot = -Infinity;
+    for (let i = 0; i < seeds.length; i++) {
+      const d = cen.dot(seeds[i]);
+      if (d > bestDot) {
+        bestDot = d;
+        best = i;
+      }
+    }
+    buckets[best].push(f);
   }
+
+  for (const faceList of buckets) {
+    if (faceList.length === 0) continue;
+    const positions = new Float32Array(faceList.length * 9);
+    const uvs = new Float32Array(faceList.length * 6);
+    faceList.forEach((f, k) => {
+      const us: number[] = [];
+      for (let j = 0; j < 3; j++) {
+        const vx = pos.getX(f * 3 + j);
+        const vy = pos.getY(f * 3 + j);
+        const vz = pos.getZ(f * 3 + j);
+        positions[k * 9 + j * 3] = vx;
+        positions[k * 9 + j * 3 + 1] = vy;
+        positions[k * 9 + j * 3 + 2] = vz;
+        const [u, v] = uvOf(vx, vy, vz);
+        us.push(u);
+        uvs[k * 6 + j * 2] = u;
+        uvs[k * 6 + j * 2 + 1] = v;
+      }
+      // seam fix: a triangle straddling the back seam has u's far apart - push
+      // the small ones past 1 so the slice stays contiguous (needs wrapS repeat)
+      if (Math.max(...us) - Math.min(...us) > 0.5) {
+        for (let j = 0; j < 3; j++) if (us[j] < 0.5) uvs[k * 6 + j * 2] = us[j] + 1;
+      }
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    const c = new THREE.Vector3();
+    geo.boundingBox!.getCenter(c);
+    geo.translate(-c.x, -c.y, -c.z);
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: "#c9ccd1",
+      roughness: 0.18,
+      metalness: 0,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+      envMapIntensity: 1.15,
+      side: THREE.DoubleSide,
+      transparent: true,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(c);
+
+    // A gentle outward pop plus a downward bias so most pieces fall; a few top
+    // shards float up and fade. Kept tight so the whole break stays compact.
+    const dir = c.clone().normalize();
+    const floater = c.y > 0.35 && Math.random() < 0.5;
+    const vel = dir.multiplyScalar(0.28 + Math.random() * 0.4);
+    vel.x += (Math.random() - 0.5) * 0.35;
+    vel.z += (Math.random() - 0.5) * 0.35;
+    if (floater) vel.y = 0.4 + Math.random() * 0.35;
+    else vel.y += 0.15;
+    const spin = new THREE.Vector3(
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+    ).multiplyScalar(4);
+    (mesh.userData as { shard: Shard }).shard = {
+      vel,
+      spin,
+      gScale: floater ? 0.16 : 1,
+      floater,
+    };
+    g.add(mesh);
+  }
+  src.dispose();
   return g;
 }
 
 function Egg({ code }: { code: string }) {
-  // The shard group is a live THREE object we mutate every frame, so it lives in
-  // a ref (built once), not a memo - refs are the sanctioned mutable escape hatch.
   // The shard group is a live THREE object we mutate every frame, so it lives in
   // a ref (built once) - refs are the sanctioned mutable escape hatch. Every
   // callback reads it back through the ref; it is never an effect dependency.
@@ -124,6 +181,7 @@ function Egg({ code }: { code: string }) {
         const tex = new THREE.CanvasTexture(flagToCanvas(img));
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
+        tex.wrapS = THREE.RepeatWrapping; // lets seam shards sample u > 1
         setTexture((prev) => {
           prev?.dispose();
           return tex;
@@ -209,9 +267,9 @@ export default function FlagShatter3D({ code }: { code: string }) {
   }
 
   return (
-    <div className="h-44 w-44">
+    <div className="h-36 w-36">
       <Canvas
-        camera={{ position: [0, 0.25, 4.3], fov: 40 }}
+        camera={{ position: [0, 0.2, 5.2], fov: 36 }}
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 2]}
       >

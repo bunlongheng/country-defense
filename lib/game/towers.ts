@@ -140,8 +140,8 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
   // any time - it's special.
   roamer: {
     type: "roamer",
-    name: "Line Laser",
-    blurb: "A stationary beam tank: fires a white laser straight across its whole row",
+    name: "Laser",
+    blurb: "A stationary beam tank: fires a white laser straight across the whole map",
     color: "#eef2f7", // near-white
     icon: "—",
     cost: 0, // free - you start with one

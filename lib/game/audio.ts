@@ -113,6 +113,11 @@ const SHOOT: Record<TowerType, () => void> = {
     blip(120, 0.22, "sine", 0.6, 320);
     noise(0.1, 0.14, 500);
   },
+  // the Frost Rover: a crisp icy shard on top of a watery spray
+  roamer: () => {
+    blip(1040, 0.09, "sine", 0.3, 320);
+    noise(0.06, 0.12, 2600);
+  },
 };
 
 /** Ominous descending beep for the nuke's 3-2-1 countdown (n = 3, 2, 1). */

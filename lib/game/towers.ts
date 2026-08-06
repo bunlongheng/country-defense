@@ -134,6 +134,23 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     slow: 0,
     chain: 0,
   },
+  // the special white ROAMER: given free at the start, it drives itself around the
+  // map (see stepRoamers) and shoots white frost that freezes the target AND blasts
+  // half its health away per shot. damage is a % handled in fireTowers, not here.
+  roamer: {
+    type: "roamer",
+    name: "Frost Rover",
+    blurb: "A self-driving tank: freezes a foe solid and shears off half its health",
+    color: "#eef2f7", // near-white
+    icon: "❄",
+    cost: 0, // free - you start with one
+    range: 2.7,
+    damage: 0, // % damage applied in fireTowers (50% of the target's max HP)
+    fireRate: 1.1,
+    splash: 0,
+    slow: 0.5, // during freeze-immunity it still slows
+    chain: 0,
+  },
 };
 
 export const TOWER_ORDER: TowerType[] = [
@@ -193,7 +210,9 @@ export function towerStats(type: TowerType, level: number): TowerDef {
 
 /** Cost to upgrade from the given current level to the next. */
 export function upgradeCost(type: TowerType, level: number): number {
-  const base = TOWER_DEFS[type].cost;
+  // the roamer is free to own but pricey to upgrade (it maneuvers), so anchor its
+  // upgrade curve to a stiff notional base instead of its 0 build cost
+  const base = type === "roamer" ? 160 : TOWER_DEFS[type].cost;
   return Math.round(base * (0.8 + level * 0.7));
 }
 
@@ -204,10 +223,8 @@ export function sellValue(type: TowerType, level: number): number {
   return Math.round(total * 0.6);
 }
 
-export const towerCenter = (t: Tower): Vec2 => ({
-  x: t.cell.x,
-  y: t.cell.y,
-});
+// The roamer fights from its live drifting position; fixed towers from their cell.
+export const towerCenter = (t: Tower): Vec2 => t.pos ?? { x: t.cell.x, y: t.cell.y };
 
 /**
  * Choose the primary target for a tower: the enemy in range that is furthest

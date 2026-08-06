@@ -506,9 +506,9 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
     ctx.stroke();
   }
 
-  // towers
+  // towers (the roamer draws at its live drifting position, not a fixed cell)
   for (const t of s.towers) {
-    const p = toPx(t.cell, cell);
+    const p = toPx(t.pos ?? t.cell, cell);
     if (t.id === s.selectedId) {
       const stats = towerStats(t.type, t.level);
       const def = TOWER_DEFS[t.type];
@@ -1102,6 +1102,8 @@ export function drawTower(
     drawSniperEmblem(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "frost") {
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
+  } else if (t.type === "roamer") {
+    drawSnowflake(ctx, p.x, p.y, R * 1.05, "#2563eb"); // blue flake reads on the white rover
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
@@ -1170,9 +1172,15 @@ function drawSniperEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number,
 // every tower reads by a clean white glyph on its colour-coded glossy dome.
 const WHITE = "rgba(255,255,255,0.95)";
 
-function drawSnowflake(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+function drawSnowflake(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string = WHITE,
+) {
   const r = s * 0.5;
-  ctx.strokeStyle = WHITE;
+  ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(1.2, s * 0.08);
   ctx.lineCap = "round";
   for (let i = 0; i < 6; i++) {
@@ -1537,6 +1545,7 @@ function drawShot(
       ctx.restore();
       break;
     }
+    case "roamer": // the Frost Rover fires the same frosty spray as the Water tower
     case "frost": {
       // WATER: a spurt of SEPARATE droplets flies from the barrel (not a beam),
       // then a splash of droplets bursts on the target

@@ -14,7 +14,8 @@ export type TowerType =
   | "rapid"
   | "tesla"
   | "slime"
-  | "bomber";
+  | "bomber"
+  | "roamer";
 
 export interface Enemy {
   id: number;
@@ -40,6 +41,8 @@ export interface Tower {
   level: number; // 1..MAX_LEVEL
   cooldown: number; // seconds until it can fire again
   aim?: number; // barrel angle (radians); tracks the current target, holds last on none
+  pos?: Vec2; // continuous position for the roaming tank (falls back to cell centre)
+  wander?: Vec2; // the roamer's current drift target (tile coords)
 }
 
 export interface Projectile {

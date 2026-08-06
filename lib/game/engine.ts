@@ -28,7 +28,7 @@ const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 // still applies its slow, so the enemy always creeps forward and the wave ends.
 function markEffect(enemy: Enemy, type: string, time: number) {
   if (type === "tesla") enemy.shockUntil = time + SHOCK_DURATION;
-  else if (type === "frost") {
+  else if (type === "frost" || type === "roamer") {
     if (time >= (enemy.freezeImmuneUntil ?? 0)) {
       enemy.frozenUntil = time + FREEZE_DURATION;
       enemy.freezeImmuneUntil = enemy.frozenUntil + FREEZE_IMMUNE;
@@ -68,6 +68,31 @@ export function moveEnemies(
     survivors.push(e);
   }
   return { survivors, leaked };
+}
+
+// Drive the self-roaming tanks: each drifts toward a random point on the board and
+// picks a new one when it arrives, so the white Frost Rover patrols on its own. Runs
+// every frame (even between waves) so the tank is always alive on the map.
+export function stepRoamers(towers: Tower[], dt: number, cols: number, rows: number) {
+  const pick = (): Vec2 => ({
+    x: Math.random() * (cols - 1),
+    y: Math.random() * (rows - 1),
+  });
+  for (const t of towers) {
+    if (t.type !== "roamer") continue;
+    if (!t.pos) t.pos = { x: t.cell.x, y: t.cell.y };
+    if (!t.wander) t.wander = pick();
+    const dx = t.wander.x - t.pos.x;
+    const dy = t.wander.y - t.pos.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.2) {
+      t.wander = pick();
+      continue;
+    }
+    const stepLen = Math.min(d, 1.5 * dt); // ~1.5 tiles/sec
+    t.pos.x += (dx / d) * stepLen;
+    t.pos.y += (dy / d) * stepLen;
+  }
 }
 
 let projId = 1;
@@ -132,8 +157,11 @@ export function fireTowers(
       continue;
     }
 
+    // the roamer shears off half the target's max health per shot (heavy % damage,
+    // never a clean one-shot) on top of freezing it; everyone else deals flat damage
+    const dmg = tower.type === "roamer" ? Math.ceil(target.maxHp * 0.5) : stats.damage;
     // primary hit
-    applyHit(target, stats.damage, stats.slow, time, slowDur);
+    applyHit(target, dmg, stats.slow, time, slowDur);
     markEffect(target, tower.type, time);
     projectiles.push({
       id: projId,

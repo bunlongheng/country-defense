@@ -74,6 +74,7 @@ import {
   reapDead,
   ageProjectiles,
   resetProjectileIds,
+  stepRoamers,
 } from "@/lib/game/engine";
 import type { Particle } from "@/lib/game/particles";
 import {
@@ -454,6 +455,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     projectiles.current = [];
     time.current = 0;
     nextTowerId.current = 1;
+    // one free self-roaming Frost Rover per board, starting mid-map
+    const rc = { x: Math.floor(GRID_COLS / 2), y: Math.floor(GRID_ROWS / 2) };
+    towers.current.push({
+      id: nextTowerId.current++,
+      type: "roamer",
+      cell: rc,
+      level: 1,
+      cooldown: 0,
+      pos: { x: rc.x, y: rc.y },
+      wander: { x: rc.x, y: rc.y },
+    });
     seedRef.current = Math.floor(Math.random() * pool.current.length);
     goldRef.current = START_GOLD;
     livesRef.current = START_LIVES;
@@ -748,6 +760,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         }
       }
 
+      // the self-roaming tank patrols every frame, wave or grace period alike
+      stepRoamers(towers.current, dt, GRID_COLS, GRID_ROWS);
+
       // the base smokes past half-health, then burns as it nears death
       const hurtFrac = 1 - livesRef.current / START_LIVES;
       if (hurtFrac > 0.5 && Math.random() < dt * (hurtFrac > 0.8 ? 12 : 5))
@@ -1020,7 +1035,29 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       return;
     }
 
-    const existing = towers.current.find((t) => t.cell.x === col && t.cell.y === row);
+    // the roamer isn't on a fixed cell - select it by tapping near its live spot
+    const tapTile = { x: fx - 0.5, y: fy - 0.5 };
+    const roamer = towers.current.find(
+      (t) =>
+        t.type === "roamer" &&
+        t.pos !== undefined &&
+        Math.hypot(t.pos.x - tapTile.x, t.pos.y - tapTile.y) < 0.7,
+    );
+    if (roamer && roamer.pos) {
+      setSelected({
+        id: roamer.id,
+        type: roamer.type,
+        level: roamer.level,
+        left: canvas.offsetLeft + (roamer.pos.x + 0.5) * cell,
+        top: canvas.offsetTop + roamer.pos.y * cell,
+      });
+      closeMenu();
+      return;
+    }
+
+    const existing = towers.current.find(
+      (t) => t.type !== "roamer" && t.cell.x === col && t.cell.y === row,
+    );
     if (existing) {
       setSelected({
         id: existing.id,
@@ -1597,15 +1634,18 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                     ? "Max level"
                     : `Upgrade $${upgradeCost(selected.type, selected.level)}`}
                 </button>
-                <button
-                  onClick={doSell}
-                  className="min-h-11 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white"
-                >
-                  Sell ${sellValue(selected.type, selected.level)}
-                </button>
+                {selected.type !== "roamer" && (
+                  <button
+                    onClick={doSell}
+                    className="min-h-11 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white"
+                  >
+                    Sell ${sellValue(selected.type, selected.level)}
+                  </button>
+                )}
               </div>
-              {/* relocate for free - only between waves (grace period) */}
-              {phase === "ready" && (
+              {/* relocate for free - only between waves (grace period); the roamer
+                  drives itself, so it never needs (or shows) a Move button */}
+              {phase === "ready" && selected.type !== "roamer" && (
                 <button
                   onClick={() =>
                     setMovingId((m) => (m === selected.id ? null : selected.id))

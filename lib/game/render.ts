@@ -965,25 +965,42 @@ function drawTower(
     ctx.fill();
   }
 
-  // circular metallic armor base in the nation's colour, with a beveled rim
+  // armor MOUNTING PLATE: a rounded-square platform (not just a flat disc) in the
+  // nation's colour, with a beveled rim, an inset panel and four corner bolts, so
+  // the turret reads as mounted hardware
+  const plate = R * 1.02; // half-size of the plate
+  const rad = R * 0.42; // corner rounding
   const body = ctx.createRadialGradient(
-    p.x + LIGHT.x * R, p.y + LIGHT.y * R, R * 0.1, p.x, p.y, R * 1.15,
+    p.x + LIGHT.x * R, p.y + LIGHT.y * R, R * 0.1, p.x, p.y, R * 1.3,
   );
   body.addColorStop(0, shade(c1, 0.5));
   body.addColorStop(0.68, c1);
   body.addColorStop(1, shade(c1, -0.55));
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+  roundRect(ctx, p.x - plate, p.y - plate, plate * 2, plate * 2, rad);
   ctx.fillStyle = body;
   ctx.fill();
   ctx.lineWidth = R * 0.1; // dark beveled rim
   ctx.strokeStyle = shade(c1, -0.55);
   ctx.stroke();
-  ctx.lineWidth = 1.5; // thin bright highlight ring inside the rim
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, R * 0.86, 0, Math.PI * 2);
+  roundRect(ctx, p.x - plate * 0.8, p.y - plate * 0.8, plate * 1.6, plate * 1.6, rad * 0.7);
+  ctx.lineWidth = 1.5; // inset panel highlight
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
   ctx.stroke();
+  // four corner bolts
+  const bolt = R * 0.13;
+  const bp = plate * 0.72;
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    const bx = p.x + sx * bp;
+    const by = p.y + sy * bp;
+    ctx.fillStyle = shade(c1, -0.5);
+    ctx.beginPath();
+    ctx.arc(bx, by, bolt, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade(c1, 0.35); // little lit top on each bolt
+    ctx.beginPath();
+    ctx.arc(bx - bolt * 0.28, by - bolt * 0.28, bolt * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // barrel: rotates to track the target; shots leave its muzzle
   ctx.save();
@@ -1001,7 +1018,9 @@ function drawTower(
   ctx.fill();
   ctx.restore();
 
-  // domed turret, lit from the sun
+  // domed turret, lit from the sun. The Bomb Thrower gets a glossy BLACK dome
+  // (like a black marble) - no bomb icon; its identity is the black gloss.
+  const domeColor = t.type === "bomber" ? "#1b1e26" : def.color;
   const domeR = R * 0.66;
   const dome = ctx.createRadialGradient(
     p.x + LIGHT.x * domeR,
@@ -1011,15 +1030,15 @@ function drawTower(
     p.y,
     domeR,
   );
-  dome.addColorStop(0, shade(def.color, 0.55));
-  dome.addColorStop(0.55, def.color);
-  dome.addColorStop(1, shade(def.color, -0.5));
+  dome.addColorStop(0, shade(domeColor, 0.55));
+  dome.addColorStop(0.55, domeColor);
+  dome.addColorStop(1, shade(domeColor, -0.5));
   ctx.beginPath();
   ctx.arc(p.x, p.y, domeR, 0, Math.PI * 2);
   ctx.fillStyle = dome;
   ctx.fill();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = shade(def.color, -0.4);
+  ctx.strokeStyle = shade(domeColor, -0.4);
   ctx.stroke();
 
   // glossy specular streak (sun glint)
@@ -1042,7 +1061,12 @@ function drawTower(
   // emblem so kids can tell the towers apart - the two that used emoji now get
   // real drawn vector icons; the rest are clean unicode symbols
   if (t.type === "bomber") {
-    drawBombEmblem(ctx, p.x, p.y, cell * 0.34);
+    // no emblem - the glossy black dome is the look (a tiny cyan glint keeps it
+    // from reading as a dead black circle)
+    ctx.fillStyle = "rgba(120,180,255,0.35)";
+    ctx.beginPath();
+    ctx.arc(p.x + LIGHT.x * R * 0.3, p.y + LIGHT.y * R * 0.3, R * 0.08, 0, Math.PI * 2);
+    ctx.fill();
   } else if (t.type === "slime") {
     drawSlimeEmblem(ctx, p.x, p.y, cell * 0.34);
   } else if (t.type === "sniper") {
@@ -1062,49 +1086,6 @@ function drawTower(
     const flagScale = t.level === 3 ? 0.72 : t.level === 4 ? 1 : 1.3;
     towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
   }
-}
-
-// A real bomb icon (round body + lit fuse) drawn as vector art - no emoji.
-function drawBombEmblem(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const r = s * 0.52;
-  const by = cy + r * 0.22;
-  // body: dark sphere with a soft top-left highlight so it reads as round
-  const g = ctx.createRadialGradient(cx - r * 0.35, by - r * 0.35, r * 0.15, cx, by, r);
-  g.addColorStop(0, "#5b6472");
-  g.addColorStop(1, "#0a0d13");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, by, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.lineWidth = Math.max(1, s * 0.07); // bright rim so it pops on the dark dome
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.7)"; // glint
-  ctx.beginPath();
-  ctx.arc(cx - r * 0.32, by - r * 0.3, r * 0.2, 0, Math.PI * 2);
-  ctx.fill();
-  // fuse
-  const fx = cx + r * 0.75, fy = by - r * 1.45;
-  ctx.strokeStyle = "#cbd5e1";
-  ctx.lineWidth = Math.max(1, s * 0.11);
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(cx + r * 0.1, by - r * 0.9);
-  ctx.quadraticCurveTo(cx + r * 0.7, by - r * 1.2, fx, fy);
-  ctx.stroke();
-  // spark
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  const sp = s * 0.26;
-  const sg = ctx.createRadialGradient(fx, fy, 1, fx, fy, sp);
-  sg.addColorStop(0, "rgba(255,255,220,1)");
-  sg.addColorStop(0.5, "rgba(255,170,40,0.9)");
-  sg.addColorStop(1, "rgba(255,120,0,0)");
-  ctx.fillStyle = sg;
-  ctx.beginPath();
-  ctx.arc(fx, fy, sp, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 }
 
 // A clean glossy goo-ball icon, centered on the dome (no more lopsided teardrop).

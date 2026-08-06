@@ -11,17 +11,33 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let barTime = 0; // audio-clock time the next bar should start
 let bar = 0;
 
-const BPM = 82;
-const BEAT = 60 / BPM;
+const BEAT = 60 / 82;
 const BAR = BEAT * 4;
 
-// Chord voicings (Hz) and their bass roots, one entry per bar.
+// Chord voicings (Hz) and their bass roots, one entry per bar. The menu theme is a
+// slow, brooding i-VI-III-VII in A minor.
 const PROG = [
   { chord: [220.0, 261.63, 329.63], bass: 110.0 }, // Am
   { chord: [174.61, 220.0, 261.63], bass: 87.31 }, // F
   { chord: [261.63, 329.63, 392.0], bass: 130.81 }, // C
   { chord: [196.0, 246.94, 293.66], bass: 98.0 }, // G
 ];
+
+// The battle theme: a faster, driving I-V-vi-IV (C-G-Am-F) with a kick on every
+// beat, so gameplay has forward momentum without fighting the sound effects.
+const GAME_BEAT = 60 / 104;
+const GAME_BAR = GAME_BEAT * 4;
+const GAME_PROG = [
+  { chord: [261.63, 329.63, 392.0], bass: 130.81 }, // C
+  { chord: [196.0, 246.94, 293.66], bass: 98.0 }, // G
+  { chord: [220.0, 261.63, 329.63], bass: 110.0 }, // Am
+  { chord: [174.61, 220.0, 261.63], bass: 87.31 }, // F
+];
+
+// Which theme is currently scheduled (swapped by the start functions).
+let curProg = PROG;
+let barLen = BAR;
+let curDrums = 2; // kick hits per bar
 
 function ac(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -110,16 +126,15 @@ function drum(t: number) {
 }
 
 function scheduleBar(t: number, index: number) {
-  const { chord, bass: root } = PROG[index % PROG.length];
-  chord.forEach((f) => pad(f, t, BAR));
-  bass(root, t, BAR);
-  bass(root, t + BAR / 2, BAR / 2);
-  drum(t);
-  drum(t + BAR / 2);
+  const { chord, bass: root } = curProg[index % curProg.length];
+  chord.forEach((f) => pad(f, t, barLen));
+  bass(root, t, barLen);
+  bass(root, t + barLen / 2, barLen / 2);
+  for (let d = 0; d < curDrums; d++) drum(t + (d * barLen) / curDrums);
   // rolling 8-note arpeggio up the chord + an octave
   const notes = [...chord, chord[0] * 2, chord[1] * 2];
   for (let i = 0; i < 8; i++) {
-    bell(notes[i % notes.length], t + (i * BAR) / 8);
+    bell(notes[i % notes.length], t + (i * barLen) / 8);
   }
 }
 
@@ -129,23 +144,34 @@ function tick() {
   if (!c || !playing) return;
   while (barTime < c.currentTime + 0.2) {
     scheduleBar(barTime, bar);
-    barTime += BAR;
+    barTime += barLen;
     bar++;
   }
 }
 
-export function startMenuMusic() {
+// Start (or swap to) a theme. Only one plays at a time, so switching menu -> game
+// just re-points the scheduler; the caller stops the previous theme first.
+function begin(prog: typeof PROG, blen: number, drums: number) {
   const c = ac();
   if (!c || playing) return;
   if (c.state === "suspended") c.resume().catch(() => {});
+  curProg = prog;
+  barLen = blen;
+  curDrums = drums;
   playing = true;
   bar = 0;
   barTime = c.currentTime + 0.1;
+  // cancel any lingering fade from a previous stop and come back up to volume
+  if (master) {
+    const now = c.currentTime;
+    master.gain.cancelScheduledValues(now);
+    master.gain.setValueAtTime(0.16, now);
+  }
   tick();
   timer = setInterval(tick, 40);
 }
 
-export function stopMenuMusic() {
+function end() {
   playing = false;
   if (timer) {
     clearInterval(timer);
@@ -162,3 +188,8 @@ export function stopMenuMusic() {
     }, 500);
   }
 }
+
+export const startMenuMusic = () => begin(PROG, BAR, 2);
+export const stopMenuMusic = () => end();
+export const startGameMusic = () => begin(GAME_PROG, GAME_BAR, 4);
+export const stopGameMusic = () => end();

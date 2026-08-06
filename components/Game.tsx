@@ -16,6 +16,7 @@ import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
 import FlagShatter3D from "./FlagShatter3D";
 import FlagMarble3D from "./FlagMarble3D";
+import { startGameMusic, stopGameMusic } from "@/lib/game/music";
 import {
   unlockAudio,
   toggleMute,
@@ -253,6 +254,14 @@ function TowerChip({ type }: { type: TowerType }) {
 
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
+
+  // battle music for the whole match (the menu already unlocked audio, so it just
+  // starts); stops when we leave the game
+  useEffect(() => {
+    startGameMusic();
+    return () => stopGameMusic();
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseMarbleRef = useRef<HTMLDivElement>(null); // 3D flag marble pinned over the base tile
 

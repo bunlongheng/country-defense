@@ -1683,20 +1683,54 @@ function drawShot(
       break;
     }
     case "roamer": {
-      // a white LINE LASER raked straight across the row: a wide soft glow, a bright
-      // core, and a white-hot centre. It blazes then fades over its life (pr.ttl),
-      // so it lingers as a real beam instead of a one-frame flash.
+      // a blazing white LINE LASER: a wide cyan glow, a bright body, a white-hot core,
+      // an electric crackle zig-zagging along it, and a muzzle flash where it leaves
+      // the cannon. It fades over its life (pr.ttl) so it lingers as a real beam.
       const f = Math.min(1, pr.ttl / 0.35);
       ctx.lineCap = "round";
-      ctx.strokeStyle = `rgba(200,225,255,${0.32 * f})`;
-      ctx.lineWidth = lw * 0.55 * pr.scale;
+      const bx = b.x - a.x;
+      const by = b.y - a.y;
+      const len = Math.hypot(bx, by) || 1;
+      const px = -by / len; // unit perpendicular, for the crackle offsets
+      const py = bx / len;
+
+      ctx.strokeStyle = `rgba(150,205,255,${0.24 * f})`;
+      ctx.lineWidth = lw * 0.7 * pr.scale;
       line(ctx, a, b);
-      ctx.strokeStyle = `rgba(230,244,255,${0.9 * f})`;
-      ctx.lineWidth = lw * 0.18 * pr.scale;
+      ctx.strokeStyle = `rgba(225,242,255,${0.9 * f})`;
+      ctx.lineWidth = lw * 0.2 * pr.scale;
       line(ctx, a, b);
       ctx.strokeStyle = `rgba(255,255,255,${f})`;
-      ctx.lineWidth = lw * 0.06;
+      ctx.lineWidth = lw * 0.07;
       line(ctx, a, b);
+
+      // electric crackle: two jagged strands that wobble as the beam fades
+      ctx.strokeStyle = `rgba(200,235,255,${0.55 * f})`;
+      ctx.lineWidth = Math.max(1, lw * 0.05);
+      for (let strand = 0; strand < 2; strand++) {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        const segs = 12;
+        for (let i = 1; i < segs; i++) {
+          const t2 = i / segs;
+          const amp =
+            Math.sin(i * 2.1 + pr.ttl * 45 + strand * 3 + pr.jitter * 20) * cell * 0.07 * f;
+          ctx.lineTo(a.x + bx * t2 + px * amp, a.y + by * t2 + py * amp);
+        }
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      // muzzle flash where the beam leaves the barrel
+      const mr = cell * 0.34 * (0.7 + f * 0.5);
+      const mg = ctx.createRadialGradient(a.x, a.y, 1, a.x, a.y, mr);
+      mg.addColorStop(0, `rgba(255,255,255,${0.95 * f})`);
+      mg.addColorStop(0.4, `rgba(170,225,255,${0.7 * f})`);
+      mg.addColorStop(1, "rgba(120,180,255,0)");
+      ctx.fillStyle = mg;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, mr, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     case "frost": {

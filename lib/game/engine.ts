@@ -122,11 +122,14 @@ export function fireTowers(
         if (along < -0.3) continue; // only foes IN FRONT of the barrel, never behind
         if (Math.abs(ex * -dy + ey * dx) <= BAND) applyHit(e, rs.damage, 0, time);
       }
-      // the beam: from the barrel muzzle out to well past the map edge, so it reads as
-      // a full-length ray. A long ttl lets it linger as a blaze, not a one-frame flash.
+      // the beam: from the barrel muzzle TIP out to well past the map edge, so it
+      // reads as a full-length ray that actually leaves the cannon (the tower radius
+      // in tiles is 0.2 + 0.05*level, and the barrel tip sits at 1.32x that). A long
+      // ttl lets it linger as a blaze, not a one-frame flash.
+      const muzzle = (0.2 + tower.level * 0.05) * 1.32;
       projectiles.push({
         id: projId,
-        from: { x: c.x + dx * 0.55, y: c.y + dy * 0.55 },
+        from: { x: c.x + dx * muzzle, y: c.y + dy * muzzle },
         to: { x: c.x + dx * 60, y: c.y + dy * 60 },
         targetId: target.id,
         type: "roamer",

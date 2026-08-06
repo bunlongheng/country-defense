@@ -16,7 +16,6 @@ import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
 import FlagShatter3D from "./FlagShatter3D";
 import FlagMarble3D from "./FlagMarble3D";
-import { startGameMusic, stopGameMusic } from "@/lib/game/music";
 import {
   unlockAudio,
   toggleMute,
@@ -272,14 +271,6 @@ function findLaserStart(blocked: Set<string>): { x: number; y: number } {
 
 export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
   const country = findCountry(code);
-
-  // battle music for the whole match (the menu already unlocked audio, so it just
-  // starts); stops when we leave the game
-  useEffect(() => {
-    startGameMusic();
-    return () => stopGameMusic();
-  }, []);
-
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseMarbleRef = useRef<HTMLDivElement>(null); // 3D flag marble pinned over the base tile
 
@@ -1270,9 +1261,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const togglePause = () => {
     pausedRef.current = !pausedRef.current;
     setPaused(pausedRef.current);
-    // the music pauses with the game and resumes when you unpause
-    if (pausedRef.current) stopGameMusic();
-    else startGameMusic();
   };
 
   // ---- gamepad: play the whole game with a Bluetooth controller ----------

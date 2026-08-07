@@ -1397,7 +1397,7 @@ export function drawTower(
   } else if (t.type === "roamer") {
     // no center emblem - the hero tank is just a clean glossy white helmet dome
   } else if (t.type === "wind") {
-    drawWindSwirl(ctx, p.x, p.y, R * 1.0);
+    // no center emblem - the grey Black Wind tank is just a clean plain dome
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
@@ -1519,30 +1519,6 @@ function drawBolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: numb
   ctx.lineTo(cx + w * 0.04, cy - h * 0.12);
   ctx.closePath();
   ctx.fill();
-}
-
-// A wind swirl - a coiled spiral gust, the Black Wind tank's emblem, drawn in the
-// same clean WHITE as every other tank's glyph so it stays consistent on the grey
-// dome (the "black" is the gust it fires, not the badge).
-function drawWindSwirl(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const r = s * 0.5;
-  ctx.strokeStyle = WHITE;
-  ctx.lineWidth = Math.max(1.4, s * 0.11);
-  ctx.lineCap = "round";
-  // an inward spiral (~1.4 turns)
-  ctx.beginPath();
-  const turns = 1.4;
-  const steps = 26;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const ang = t * turns * Math.PI * 2;
-    const rad = r * (1 - t * 0.82);
-    const x = cx + Math.cos(ang) * rad;
-    const y = cy + Math.sin(ang) * rad;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
 }
 
 function drawTargetDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {

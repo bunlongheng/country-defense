@@ -586,8 +586,11 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setStage(idx);
   }, []);
 
-  // Wipe the board for a fresh defense (towers, gold, lives, wave, nuke). Does
-  // NOT touch which stage we're on - callers set the stage first.
+  // Wipe the board for a fresh defense (towers, gold, lives, wave, nuke). Does NOT
+  // touch which stage we're on - callers set the stage first - and, crucially, does
+  // NOT reset the score or kills: those ACCUMULATE across every stage of the run, so
+  // a player who reaches stage 5 scores far above one who stopped at stage 2. (Only
+  // resetGame, a brand-new journey, zeroes the score.)
   const resetBoard = useCallback(() => {
     resetEnemyIds();
     resetProjectileIds();
@@ -614,10 +617,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     shieldRef.current = true; // fresh shield each run
     setShieldUp(true);
     waveRef.current = 1;
-    killsRef.current = 0;
-    setKills(0);
-    scoreRef.current = 0;
-    setScore(0);
     setResult(null);
     setGold(START_GOLD);
     setWave(1);
@@ -638,10 +637,15 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setPhase("ready");
   }, []);
 
-  // Restart the whole journey from stage 1.
+  // Restart the whole journey from stage 1 - the ONLY place the run's cumulative
+  // score and kills are zeroed (a fresh journey starts from nothing).
   const resetGame = useCallback(() => {
     applyStage(0);
     setConfetti("none");
+    killsRef.current = 0;
+    setKills(0);
+    scoreRef.current = 0;
+    setScore(0);
     resetBoard();
   }, [applyStage, resetBoard]);
 

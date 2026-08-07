@@ -16,15 +16,23 @@ export interface ScoreEntry {
 const KEY = "country-defense:scores";
 const MAX_KEPT = 25;
 
-// Score weighting - progress is the bread and butter; surviving with lives and
-// leftover gold (efficient play) is the finishing bonus the player asked for.
+// Score weighting - HOW FAR you get is everything. A whole stage cleared is worth
+// far more than every kill, wave and hoarded coin in it combined, so more stages
+// ALWAYS outranks a cautious short run. Lives + leftover gold are only a small,
+// capped tiebreaker between two runs that got equally far (see MAX_EFFICIENCY_BONUS
+// in Game.tsx) - they can never bridge a full stage of progress.
 export const POINTS = {
   kill: 10, // per invader terminated
-  wave: 150, // per wave cleared
-  stage: 1500, // per whole stage cleared
-  lifePerLeft: 100, // per base life still standing at the end
-  goldPerLeft: 1, // per gold coin still in the bank at the end
+  wave: 500, // per wave cleared
+  stage: 10000, // per whole stage cleared - dominates the score so distance wins
+  lifePerLeft: 100, // per base life still standing at the end (tiebreaker)
+  goldPerLeft: 1, // per gold coin still in the bank at the end (tiebreaker)
 };
+
+// The lives + leftover-gold bonus is capped at this so hoarding can never let a
+// short run rival a longer one. It's a tiebreaker, not a way to buy rank: the cap
+// sits well below one stage's worth of points, so distance is always the judge.
+export const MAX_EFFICIENCY_BONUS = 2500;
 
 export function loadScores(): ScoreEntry[] {
   if (typeof window === "undefined") return [];

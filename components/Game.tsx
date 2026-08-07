@@ -62,6 +62,7 @@ import { STAGES, TOTAL_STAGES, stageBase } from "@/lib/game/stages";
 import { loadSprite } from "@/lib/game/sprites";
 import {
   POINTS,
+  MAX_EFFICIENCY_BONUS,
   saveScore,
   highScore,
   formatWhen,
@@ -546,14 +547,17 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     resetBoard();
   }, [applyStage, resetBoard]);
 
-  // Tally the final score at game over (running score + a bonus for the lives and
-  // the gold left over), record it on the device board, and stash the result.
+  // Tally the final score at game over. The running score (kills + waves + stages)
+  // already encodes HOW FAR the player got and dominates the total. Lives + leftover
+  // gold add only a small, CAPPED efficiency tiebreaker so a cautious short run that
+  // hoards coins can never rival a run that pushed more stages deep.
   const finalizeScore = useCallback(
     (outcome: "won" | "lost") => {
-      const final =
-        scoreRef.current +
-        livesRef.current * POINTS.lifePerLeft +
-        goldRef.current * POINTS.goldPerLeft;
+      const efficiency = Math.min(
+        livesRef.current * POINTS.lifePerLeft + goldRef.current * POINTS.goldPerLeft,
+        MAX_EFFICIENCY_BONUS,
+      );
+      const final = scoreRef.current + efficiency;
       const prevBest = highScore();
       const board = saveScore({
         score: final,
@@ -666,8 +670,9 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         const bonus = waveClearBonus(waveRef.current);
         goldRef.current += bonus;
         setGold(goldRef.current);
+        scoreRef.current += POINTS.wave; // every wave cleared counts toward distance
         if (waveRef.current >= TOTAL_WAVES) {
-          scoreRef.current += POINTS.stage; // a whole stage cleared
+          scoreRef.current += POINTS.stage; // ...and a whole stage cleared on top
           setScore(scoreRef.current);
           // whole stage cleared
           if (stageRef.current >= TOTAL_STAGES - 1) {
@@ -684,8 +689,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             window.setTimeout(() => advanceStage(), 2600);
           }
         } else {
-          scoreRef.current += POINTS.wave; // a wave cleared
-          setScore(scoreRef.current);
+          setScore(scoreRef.current); // wave point already added above
           waveRef.current += 1;
           setWave(waveRef.current);
           setPhase("ready");

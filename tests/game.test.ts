@@ -37,6 +37,7 @@ import {
   BASE_CELL,
 } from "../lib/game/map.ts";
 import { STAGES, TOTAL_STAGES, stageBase } from "../lib/game/stages.ts";
+import { POINTS, MAX_EFFICIENCY_BONUS } from "../lib/game/score.ts";
 import { dist, hexA } from "../lib/game/math.ts";
 import type { Enemy, Tower } from "../lib/game/types.ts";
 
@@ -246,6 +247,18 @@ test("reapDead awards gold for kills and keeps the living", () => {
   assert.equal(res.gold, 12);
   assert.equal(res.kills, 1);
   assert.equal(res.survivors.length, 1);
+});
+
+test("scoring judges by distance: one more stage always outranks hoarding lives+gold", () => {
+  // clearing a whole stage is worth more than every wave in it PLUS the full
+  // efficiency (lives+gold) tiebreaker, so pushing one stage deeper can never be
+  // beaten by a shorter run that hoarded coins and kept its lives
+  const maxHoardWithinAStage = (TOTAL_WAVES - 1) * POINTS.wave + MAX_EFFICIENCY_BONUS;
+  assert.ok(POINTS.stage > maxHoardWithinAStage, "a stage clear dwarfs any hoard");
+  // the efficiency bonus is a tiebreaker, never a way to buy a stage of rank
+  assert.ok(MAX_EFFICIENCY_BONUS < POINTS.stage, "efficiency can't bridge a stage");
+  // progress out-weighs grinding: a stage clear beats a wave, a wave beats a kill
+  assert.ok(POINTS.stage > POINTS.wave && POINTS.wave > POINTS.kill);
 });
 
 test("frost slow expires after its duration - enemy resumes full speed", () => {

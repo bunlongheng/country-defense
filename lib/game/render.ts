@@ -1269,19 +1269,27 @@ export function drawTower(
     ctx.fill();
   }
 
-  // barrel: rotates to track the target; shots leave its muzzle
+  // barrel: rotates to track the target; shots leave its muzzle. The BORE THICKENS
+  // with every upgrade - a thin cannon at lvl1 steps up to a heavy large-bore barrel
+  // at lvl5 (thin -> bigger -> medium -> large -> huge), so a maxed tank's gun reads
+  // at a glance. The muzzle tip grows a touch harder than the shaft for a real "big
+  // cannon" silhouette.
+  const GIRTH = [0.62, 0.82, 1.0, 1.24, 1.55];
+  const girth = GIRTH[Math.max(0, Math.min(4, t.level - 1))];
+  const bh = R * 0.15 * girth; // barrel shaft half-height
+  const mh = R * 0.2 * girth; // muzzle collar half-height (a bit fatter than the shaft)
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(t.aim ?? -Math.PI / 5);
-  const bg = ctx.createLinearGradient(0, -R * 0.17, 0, R * 0.17);
+  const bg = ctx.createLinearGradient(0, -bh * 1.1, 0, bh * 1.1);
   bg.addColorStop(0, shade(def.color, 0.35));
   bg.addColorStop(0.5, shade(def.color, -0.1));
   bg.addColorStop(1, shade(def.color, -0.55));
   ctx.fillStyle = bg;
-  roundRect(ctx, R * 0.1, -R * 0.15, R * 1.2, R * 0.3, R * 0.1);
+  roundRect(ctx, R * 0.1, -bh, R * 1.2, bh * 2, Math.min(R * 0.1, bh * 0.8));
   ctx.fill();
   ctx.fillStyle = shade(def.color, -0.35); // muzzle collar
-  roundRect(ctx, R * 1.12, -R * 0.19, R * 0.2, R * 0.38, R * 0.05);
+  roundRect(ctx, R * 1.12, -mh, R * 0.22, mh * 2, R * 0.05);
   ctx.fill();
   ctx.restore();
 
@@ -1325,13 +1333,12 @@ export function drawTower(
   ctx.fill();
   ctx.restore();
 
-  // the special white tank is the hero unit, so it gets a full WET-GLOSS treatment:
-  // a pulsing gold chrome trim, a bright top-crescent shine sweeping across the
-  // dome, a soft wet hotspot, and a hard pinpoint sparkle - gloss, gloss, gloss.
+  // the special white tank is the STORMTROOPER hero unit: a pure black-and-white
+  // glossy helmet. A crisp black seam rings the white dome, then a top-crescent
+  // shine, a soft wet hotspot and a hard pinpoint sparkle - gloss, gloss, gloss.
   if (t.type === "roamer") {
-    const shimmer = 0.7 + 0.25 * Math.sin(time * 2.5 + t.id);
     ctx.lineWidth = Math.max(1.4, R * 0.08);
-    ctx.strokeStyle = `rgba(251,191,36,${shimmer})`; // gold chrome trim on the rim
+    ctx.strokeStyle = "rgba(20,22,28,0.9)"; // black helmet seam on the white dome
     ctx.beginPath();
     ctx.arc(p.x, p.y, domeR * 0.97, 0, Math.PI * 2);
     ctx.stroke();
@@ -1388,8 +1395,8 @@ export function drawTower(
   } else if (t.type === "frost") {
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "roamer") {
-    // a golden star crest marks the hero tank as the special one
-    drawGoldStar(ctx, p.x, p.y, R * 0.95);
+    // a black stormtrooper visor on the white helmet dome - the hero tank's badge
+    drawTrooperVisor(ctx, p.x, p.y, R * 0.95);
   } else if (t.type === "wind") {
     drawWindSwirl(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "tesla") {
@@ -1416,30 +1423,36 @@ export function drawTower(
   }
 }
 
-// A golden 5-point star crest for the hero (white Line Laser) tank - a filled
-// gold star with a warm rim, so the special tank reads as decorated, not plain.
-function drawGoldStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const R2 = s * 0.5;
-  const r2 = s * 0.2;
+// A black stormtrooper visor for the hero (white Line Laser) tank: a frowning black
+// eye-band with a white glint, over a short black mouth grille - pure black & white,
+// so the white dome reads as a glossy trooper helmet.
+function drawTrooperVisor(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const w = s * 0.46;
+  const black = "rgba(20,22,28,0.92)";
+  // visor lens: a slightly frowning black band across the eyes
+  ctx.fillStyle = black;
   ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const rad = i % 2 === 0 ? R2 : r2;
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const x = cx + Math.cos(a) * rad;
-    const y = cy + Math.sin(a) * rad;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
+  ctx.moveTo(cx - w, cy - s * 0.05);
+  ctx.quadraticCurveTo(cx, cy - s * 0.24, cx + w, cy - s * 0.05);
+  ctx.quadraticCurveTo(cx + w * 0.95, cy + s * 0.12, cx, cy + s * 0.07);
+  ctx.quadraticCurveTo(cx - w * 0.95, cy + s * 0.12, cx - w, cy - s * 0.05);
   ctx.closePath();
-  const g = ctx.createRadialGradient(cx - R2 * 0.3, cy - R2 * 0.3, 1, cx, cy, R2);
-  g.addColorStop(0, "#fff7d6");
-  g.addColorStop(0.5, "#fbbf24");
-  g.addColorStop(1, "#b45309");
-  ctx.fillStyle = g;
   ctx.fill();
+  // a bright glint on the visor so it reads as glossy glass
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.beginPath();
+  ctx.ellipse(cx - w * 0.42, cy - s * 0.06, w * 0.24, s * 0.05, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // mouth grille: 3 short black vents below the visor
+  ctx.strokeStyle = black;
   ctx.lineWidth = Math.max(1, s * 0.05);
-  ctx.strokeStyle = "rgba(120,70,10,0.8)";
-  ctx.stroke();
+  ctx.lineCap = "round";
+  for (const dx of [-0.15, 0, 0.15]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + s * dx, cy + s * 0.17);
+    ctx.lineTo(cx + s * dx, cy + s * 0.29);
+    ctx.stroke();
+  }
 }
 
 // A clean glossy goo-ball icon, centered on the dome (no more lopsided teardrop).
@@ -1541,11 +1554,12 @@ function drawBolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: numb
   ctx.fill();
 }
 
-// A black wind swirl - a coiled spiral gust, the Black Wind tank's emblem, drawn
-// dark so it reads as a jet-black vortex on the grey dome.
+// A wind swirl - a coiled spiral gust, the Black Wind tank's emblem, drawn in the
+// same clean WHITE as every other tank's glyph so it stays consistent on the grey
+// dome (the "black" is the gust it fires, not the badge).
 function drawWindSwirl(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
   const r = s * 0.5;
-  ctx.strokeStyle = "rgba(10,12,16,0.9)";
+  ctx.strokeStyle = WHITE;
   ctx.lineWidth = Math.max(1.4, s * 0.11);
   ctx.lineCap = "round";
   // an inward spiral (~1.4 turns)
@@ -1561,10 +1575,6 @@ function drawWindSwirl(ctx: CanvasRenderingContext2D, cx: number, cy: number, s:
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.stroke();
-  // a faint grey glint along the coil so the black swirl still has depth
-  ctx.strokeStyle = "rgba(200,205,215,0.35)";
-  ctx.lineWidth = Math.max(1, s * 0.045);
   ctx.stroke();
 }
 

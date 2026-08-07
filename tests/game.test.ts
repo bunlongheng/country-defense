@@ -135,13 +135,14 @@ test("the journey has 10 stages that ramp up and stay on-grid", () => {
   }
 });
 
-test("there are 9 distinct tower types incl. laser, sniper, slime, bomber and wind", () => {
+test("there are 9 distinct tower types incl. laser, sniper, slime, bomber and flame", () => {
   assert.equal(TOWER_ORDER.length, 9);
   assert.equal(new Set(TOWER_ORDER).size, 9);
   assert.ok(TOWER_DEFS.laser, "laser exists");
-  // the black-wind tank slows AND rots hp over time (its defining role)
-  assert.ok(TOWER_DEFS.wind.slow > 0, "wind slows");
-  assert.ok((TOWER_DEFS.wind.dot ?? 0) > 0, "wind rots hp over time");
+  // the flame tank is SHORT range and BURNS over time (its defining role, no slow)
+  assert.ok((TOWER_DEFS.flame.dot ?? 0) > 0, "flame burns hp over time");
+  assert.equal(TOWER_DEFS.flame.slow, 0, "flame doesn't slow - it burns");
+  assert.ok(TOWER_DEFS.flame.range < TOWER_DEFS.cannon.range, "flame is short range");
   assert.ok(TOWER_DEFS.sniper.range > TOWER_DEFS.rapid.range, "sniper out-ranges rapid");
   // the slime tower slows hard and splatters (its defining role)
   assert.ok(TOWER_DEFS.slime.slow > 0, "slime slows");
@@ -208,20 +209,20 @@ test("fireTowers damages target, sets cooldown, spends no gold directly", () => 
   assert.ok(res.projectiles.length >= 1, "a tracer was emitted");
 });
 
-test("black wind stamps a slow + poison, and the poison keeps draining hp over time", () => {
-  const wind: Tower = { id: 1, type: "wind", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
-  const target = mkEnemy(2, { x: 5, y: 5 }, 6, 200);
-  fireTowers([wind], [target], 0.016, 0);
-  assert.ok(target.slowMul < 1, "wind slows the target");
-  assert.ok((target.poisonDps ?? 0) > 0 && (target.poisonUntil ?? 0) > 0, "wind poisons the target");
-  // the rot keeps ticking on later frames even with no new shot
+test("flame sets a burn (no slow) that keeps draining hp over time", () => {
+  const flame: Tower = { id: 1, type: "flame", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const target = mkEnemy(2, { x: 5, y: 5 }, 6, 200); // right on top -> within the short range
+  fireTowers([flame], [target], 0.016, 0);
+  assert.equal(target.slowMul, 1, "flame does NOT slow - it burns");
+  assert.ok((target.poisonDps ?? 0) > 0 && (target.poisonUntil ?? 0) > 0, "flame ignites the target");
+  // the burn keeps ticking on later frames even with no new shot
   const hpAfterHit = target.hp;
   moveEnemies([target], 1, 0.5, pathLength());
-  assert.ok(target.hp < hpAfterHit, "poison drained more hp over the next second");
-  // once the poison window passes, no more drain
+  assert.ok(target.hp < hpAfterHit, "burn drained more hp over the next second");
+  // once the burn window passes, no more drain
   const hpSettled = target.hp;
   moveEnemies([target], 1, 99, pathLength());
-  assert.equal(target.hp, hpSettled, "poison stops after its window");
+  assert.equal(target.hp, hpSettled, "burn stops after its window");
 });
 
 test("a poison tick that kills a foe AS it reaches the base pays out, never leaks", () => {

@@ -18,7 +18,7 @@ export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
 export const FREEZE_DURATION = 3; // frost freezes an enemy solid for 3s
 export const FREEZE_IMMUNE = 2.5; // after a thaw, frost can't re-freeze for this long
 export const SLIME_SLOW_DURATION = 5; // slime's slow lingers for 5s
-export const WIND_DOT_DURATION = 3; // black wind slows AND rots hp for 3s after each gust
+export const FLAME_BURN_DURATION = 3; // flame leaves foes burning for 3s after each jet
 const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 
 // Stamp the per-tower status effect (electric arc / freeze) onto a hit enemy.
@@ -60,13 +60,13 @@ export function moveEnemies(
     // frost freezes an enemy solid (no movement); otherwise a slow may apply
     const frozen = e.frozenUntil !== undefined && time < e.frozenUntil;
     const mul = frozen ? 0 : time < e.slowUntil ? e.slowMul : 1;
-    // black wind: keep draining hp for the whole poison window (reaped next step)
+    // flame burn: keep draining hp for the whole burn window (reaped next step)
     if (e.poisonDps && e.poisonUntil !== undefined && time < e.poisonUntil) {
       e.hp -= e.poisonDps * dt;
     }
     e.dist += e.speed * mul * dt;
     // a foe that reached the base leaks and costs a life - UNLESS it just died
-    // (e.g. this frame's black-wind poison tick finished it as it crossed the end):
+    // (e.g. this frame's flame-burn tick finished it as it crossed the end):
     // keep it so reapDead pays out the kill/gold instead of charging a life for a corpse
     if (e.dist >= pathLen && e.hp > 0) {
       leaked++;
@@ -164,8 +164,8 @@ export function fireTowers(
     const slowDur =
       tower.type === "slime"
         ? SLIME_SLOW_DURATION
-        : tower.type === "wind"
-          ? WIND_DOT_DURATION
+        : tower.type === "flame"
+          ? FLAME_BURN_DURATION
           : FROST_DURATION;
     // bigger shots at higher levels: +15% visual size per level (lvl1 = 1x, lvl5 = 1.6x)
     const shotScale = 1 + (tower.level - 1) * 0.15;
@@ -258,13 +258,13 @@ function applyHit(
     enemy.slowMul = 1 - slow;
     enemy.slowUntil = time + slowDur;
   }
-  // black wind: stamp (or refresh) the rot so it keeps draining hp for the window.
+  // flame: stamp (or refresh) the burn so it keeps draining hp for the window.
   // Refresh always extends the window, but never DOWNGRADES an already-stronger rot
-  // (a lvl1 gust must not weaken a lvl5 gust's poison on the same foe).
+  // (a lvl1 jet must not weaken a lvl5 jet's burn on the same foe).
   if (dot && dot > 0) {
     const active = enemy.poisonUntil !== undefined && time < enemy.poisonUntil;
     enemy.poisonDps = active ? Math.max(enemy.poisonDps ?? 0, dot) : dot;
-    enemy.poisonUntil = time + WIND_DOT_DURATION;
+    enemy.poisonUntil = time + FLAME_BURN_DURATION;
   }
 }
 

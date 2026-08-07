@@ -723,6 +723,10 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   };
   ctx.drawImage(background(cell, s.code, s.palette, st), 0, 0);
 
+  // cosmetic mascots: a mini white tank (a dad + his little son) that stroll around
+  // the map for charm - purely decorative, they never fight or block anything
+  drawStrollers(ctx, cell, s.time);
+
   // keyboard build cursor (only shown during keyboard play)
   if (s.cursor) {
     const x = s.cursor.x * cell;
@@ -816,9 +820,9 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
     if (s.gameTime < (e.frozenUntil ?? 0)) drawFreeze(ctx, p.x, p.y, r);
     // tesla: crackling electric arc over the enemy right after a hit
     if (s.gameTime < (e.shockUntil ?? 0)) drawShock(ctx, p.x, p.y, r, e.id, s.time);
-    // black wind: a dark rot-haze swirls around a poisoned enemy while it drains
+    // flame: a burning enemy glows orange with rising embers while the burn ticks
     if (e.poisonUntil !== undefined && s.gameTime < e.poisonUntil) {
-      drawPoisonHaze(ctx, p.x, p.y, r, e.id, s.time);
+      drawBurn(ctx, p.x, p.y, r, e.id, s.time);
     }
 
     // health bar: small, faint, and only when the enemy is actually hurt
@@ -1169,6 +1173,85 @@ function drawParticles(ctx: CanvasRenderingContext2D, cell: number, list: Partic
 
 // A glossy, tanky turret: shadow, country-colored armor base, a domed turret lit
 // from the global sun, a barrel, a bright specular streak, and level pips.
+// A tiny cosmetic white tank that drives around, facing its travel direction. No
+// stats, no collision - it's just a cute little roamer for flavour.
+function drawMiniTank(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  R: number,
+  angle: number,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  // soft ground shadow (kept flat, not rotated with the hull)
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(0, R * 0.75, R * 0.95, R * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.rotate(angle);
+  // two dark treads running along the travel direction
+  ctx.fillStyle = "#31353f";
+  for (const sy of [-1, 1] as const) {
+    roundRect(ctx, -R * 0.95, sy * R * 0.62 - R * 0.22, R * 1.9, R * 0.44, R * 0.16);
+    ctx.fill();
+  }
+  // white hull
+  const hull = ctx.createLinearGradient(0, -R, 0, R);
+  hull.addColorStop(0, "#ffffff");
+  hull.addColorStop(1, "#c7ced8");
+  ctx.fillStyle = hull;
+  roundRect(ctx, -R * 0.75, -R * 0.7, R * 1.5, R * 1.4, R * 0.35);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(40,50,70,0.45)";
+  ctx.lineWidth = Math.max(1, R * 0.08);
+  ctx.stroke();
+  // little barrel pointing forward
+  ctx.fillStyle = "#e5e9f0";
+  roundRect(ctx, R * 0.3, -R * 0.15, R * 0.95, R * 0.3, R * 0.1);
+  ctx.fill();
+  // white glossy turret dome
+  const domeR = R * 0.5;
+  const dome = ctx.createRadialGradient(-domeR * 0.35, -domeR * 0.4, 1, 0, 0, domeR);
+  dome.addColorStop(0, "#ffffff");
+  dome.addColorStop(1, "#aeb6c2");
+  ctx.fillStyle = dome;
+  ctx.beginPath();
+  ctx.arc(0, 0, domeR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.9)"; // gloss glint
+  ctx.beginPath();
+  ctx.arc(-domeR * 0.3, -domeR * 0.35, domeR * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// The little white "dad + son" pair strolling a slow, smooth wander around the map.
+// Positions are a pure function of time, so it needs no state and stays deterministic.
+function drawStrollers(ctx: CanvasRenderingContext2D, cell: number, time: number) {
+  const mx = 1.4;
+  const my = 1.1;
+  const spanX = GRID_COLS - 2 * mx;
+  const spanY = GRID_ROWS - 2 * my;
+  const at = (tt: number): Vec2 => ({
+    x: mx + spanX * (0.5 + 0.44 * Math.sin(tt * 0.15) + 0.06 * Math.sin(tt * 0.5)),
+    y: my + spanY * (0.5 + 0.42 * Math.cos(tt * 0.12) + 0.07 * Math.sin(tt * 0.4 + 1.1)),
+  });
+  // dad leads; his son trails a little behind him along the very same path
+  const pair = [
+    { t: time, size: cell * 0.2 }, // dad - about 20% of a tile
+    { t: time - 1.7, size: cell * 0.14 }, // son - smaller, following
+  ];
+  for (const m of pair) {
+    const c = at(m.t);
+    const ahead = at(m.t + 0.05);
+    const angle = Math.atan2(ahead.y - c.y, ahead.x - c.x);
+    const bob = Math.sin(m.t * 6) * 0.02; // tiny bounce as it drives
+    const p = toPx({ x: c.x, y: c.y + bob }, cell);
+    drawMiniTank(ctx, p.x, p.y, m.size, angle);
+  }
+}
+
 export function drawTower(
   ctx: CanvasRenderingContext2D,
   p: Vec2,
@@ -1396,8 +1479,8 @@ export function drawTower(
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "roamer") {
     // no center emblem - the hero tank is just a clean glossy white helmet dome
-  } else if (t.type === "wind") {
-    // no center emblem - the grey Black Wind tank is just a clean plain dome
+  } else if (t.type === "flame") {
+    // no center emblem - the red Fire Thrower tank is just a clean plain dome
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
@@ -1631,29 +1714,32 @@ function drawFreeze(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: nu
 // A real-looking electrocution: a crackling electric-blue aura plus several
 // forked lightning arcs snaking ACROSS the sphere, drawn as a glowing blue
 // underlay with a white-hot core, flickering fast.
-// Black-wind rot: a dark haze with a few soot wisps orbiting a poisoned enemy, so
-// you can see at a glance which foes are being drained by the grey tank's gust.
-function drawPoisonHaze(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
-  const pulse = 0.28 + 0.12 * Math.sin(time * 5 + seed * 3);
-  const haze = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.5);
-  haze.addColorStop(0, "rgba(18,20,26,0)");
-  haze.addColorStop(0.65, `rgba(18,20,26,${pulse})`);
-  haze.addColorStop(1, "rgba(18,20,26,0)");
-  ctx.fillStyle = haze;
+// Flame burn: a flickering orange glow with a few rising embers on a burning enemy,
+// so you can see at a glance which foes the Fire Thrower has set alight.
+function drawBurn(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const pulse = 0.32 + 0.16 * Math.sin(time * 12 + seed * 3); // fast flame flicker
+  const glow = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r * 1.45);
+  glow.addColorStop(0, `rgba(255,150,40,${pulse})`);
+  glow.addColorStop(0.55, `rgba(255,80,10,${pulse * 0.6})`);
+  glow.addColorStop(1, "rgba(200,30,0,0)");
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r * 1.45, 0, Math.PI * 2);
   ctx.fill();
-  // 3 soot wisps orbiting the marble
-  ctx.fillStyle = "rgba(28,30,38,0.75)";
+  // a few embers rising off the marble
   for (let k = 0; k < 3; k++) {
-    const ang = time * 2.2 + seed + (k / 3) * Math.PI * 2;
-    const rad = r * (1.05 + 0.12 * Math.sin(time * 4 + k));
-    const wx = cx + Math.cos(ang) * rad;
-    const wy = cy + Math.sin(ang) * rad;
+    const rise = ((time * 1.6 + k * 0.37 + seed) % 1); // 0..1 loop upward
+    const ex = cx + Math.cos(seed + k * 2.1) * r * 0.5;
+    const ey = cy + r * 0.5 - rise * r * 1.4;
+    const er = r * 0.12 * (1 - rise);
+    ctx.fillStyle = `rgba(255,${180 - (k * 30)},60,${(1 - rise) * 0.9})`;
     ctx.beginPath();
-    ctx.arc(wx, wy, r * 0.16, 0, Math.PI * 2);
+    ctx.arc(ex, ey, Math.max(0.5, er), 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
 }
 
 function drawShock(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
@@ -1903,57 +1989,62 @@ function drawShot(
       ctx.fill();
       break;
     }
-    case "wind": {
-      // BLACK WIND: a dark gust swirls out of the barrel to the target, then a black
-      // vortex billows over it. Drawn with a soft dark cloud + a spiral wisp so it
-      // reads as a rotting gust, not just smoke.
-      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
-      const px = a.x + (b.x - a.x) * prog;
-      const py = a.y + (b.y - a.y) * prog;
-      const gustR = s * (0.16 + prog * 0.26);
-      // trailing dark cloud following the gust
-      for (let k = 0; k < 3; k++) {
-        const t2 = prog - k * 0.14;
-        if (t2 < 0) continue;
-        const gx = a.x + (b.x - a.x) * t2;
-        const gy = a.y + (b.y - a.y) * t2;
-        const gr = gustR * (1 - k * 0.22);
-        const g = ctx.createRadialGradient(gx, gy, 1, gx, gy, gr);
-        g.addColorStop(0, `rgba(18,20,26,${0.7 - k * 0.18})`);
-        g.addColorStop(1, "rgba(18,20,26,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // a coiled wisp spiralling inside the lead gust (the "wind")
-      ctx.strokeStyle = `rgba(35,38,48,${0.75 * (1 - prog * 0.3)})`;
-      ctx.lineWidth = Math.max(1, s * 0.05);
-      ctx.lineCap = "round";
+    case "flame": {
+      // DRAGON FIRE: a continuous short jet of flame from the barrel to the target -
+      // a widening cone, white-hot at the muzzle fading to red at the tip, with
+      // flickering tongues and drifting embers. The tower fires fast, so overlapping
+      // jets read as one sustained flamethrower stream.
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len; // unit perpendicular, for the cone width + wobble
+      const ny = dx / len;
+      const t01 = 1 - Math.max(0, Math.min(1, pr.ttl / 0.18)); // 0 fresh -> 1 fading
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter"; // fire adds up where it overlaps
+      // the glowing cone body: narrow at the muzzle, flaring at the tip
+      const w0 = s * 0.1;
+      const w1 = s * 0.4 * (1 - t01 * 0.3);
+      const cone = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      cone.addColorStop(0, "rgba(255,240,180,0.85)");
+      cone.addColorStop(0.45, "rgba(255,140,40,0.6)");
+      cone.addColorStop(1, "rgba(200,30,0,0)");
+      ctx.fillStyle = cone;
       ctx.beginPath();
-      const turns = 1.3;
-      for (let i = 0; i <= 18; i++) {
-        const t = i / 18;
-        const ang = t * turns * Math.PI * 2 + prog * 6 + pr.jitter * 8;
-        const rad = gustR * 0.9 * (1 - t * 0.75);
-        const wx = px + Math.cos(ang) * rad;
-        const wy = py + Math.sin(ang) * rad;
-        if (i === 0) ctx.moveTo(wx, wy);
-        else ctx.lineTo(wx, wy);
-      }
-      ctx.stroke();
-      // dark burst billowing on the target as the gust lands
-      if (prog > 0.7) {
-        const sp = (prog - 0.7) / 0.3;
-        const br = s * (0.18 + sp * 0.5);
-        const bg = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, br);
-        bg.addColorStop(0, `rgba(12,14,18,${(1 - sp) * 0.7})`);
-        bg.addColorStop(1, "rgba(12,14,18,0)");
-        ctx.fillStyle = bg;
+      ctx.moveTo(a.x + nx * w0, a.y + ny * w0);
+      ctx.lineTo(b.x + nx * w1, b.y + ny * w1);
+      ctx.lineTo(b.x - nx * w1, b.y - ny * w1);
+      ctx.lineTo(a.x - nx * w0, a.y - ny * w0);
+      ctx.closePath();
+      ctx.fill();
+      // flickering flame tongues strung along the jet
+      const tongues = 5;
+      for (let k = 0; k < tongues; k++) {
+        const t = (k + 0.5) / tongues;
+        const wob = Math.sin(k * 2.3 + pr.jitter * 22 + t01 * 30) * s * 0.12 * t;
+        const fx = a.x + dx * t + nx * wob;
+        const fy = a.y + dy * t + ny * wob;
+        const fr = s * (0.09 + t * 0.2);
+        const fg = ctx.createRadialGradient(fx, fy, 1, fx, fy, fr);
+        fg.addColorStop(0, t < 0.4 ? "rgba(255,255,225,0.95)" : "rgba(255,205,90,0.85)");
+        fg.addColorStop(0.5, "rgba(255,110,20,0.5)");
+        fg.addColorStop(1, "rgba(200,30,0,0)");
+        ctx.fillStyle = fg;
         ctx.beginPath();
-        ctx.arc(b.x, b.y, br, 0, Math.PI * 2);
+        ctx.arc(fx, fy, fr, 0, Math.PI * 2);
         ctx.fill();
       }
+      // muzzle flash at the barrel
+      const mr = s * 0.3;
+      const mg = ctx.createRadialGradient(a.x, a.y, 1, a.x, a.y, mr);
+      mg.addColorStop(0, "rgba(255,255,230,0.9)");
+      mg.addColorStop(0.5, "rgba(255,150,40,0.6)");
+      mg.addColorStop(1, "rgba(255,120,0,0)");
+      ctx.fillStyle = mg;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, mr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
       break;
     }
     case "frost": {

@@ -247,8 +247,10 @@ const MENU_AROUND: [number, number][] = Array.from({ length: TOWER_ORDER.length 
   return [Math.cos(a), Math.sin(a)];
 });
 
-// Icons from the lucide-react library (bundled SVGs, no external requests).
-const IC = "h-4 w-4 sm:h-5 sm:w-5";
+// Icons from the lucide-react library (bundled SVGs, no external requests). They
+// scale up on large landscape screens (iPad in landscape) where there's real estate
+// for bigger, thumb-friendly controls.
+const IC = "h-4 w-4 sm:h-5 sm:w-5 lg:h-7 lg:w-7";
 const Icon = {
   Wave: () => <Waves className={IC} />,
   Coin: () => <Coins className={IC} />,
@@ -1339,7 +1341,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       if (phaseRef.current === "won" || phaseRef.current === "lost") return;
       unlockAudio();
       // keys 1..N pick the Nth buildable tower - derived from TOWER_ORDER so every
-      // tower (incl. the bomber and the new Black Wind) has a hotkey, not just 7
+      // tower (incl. the bomber and the Fire Thrower) has a hotkey, not just 7
       const digit = e.key >= "1" && e.key <= "9" ? Number(e.key) - 1 : -1;
       if (digit >= 0 && digit < TOWER_ORDER.length) {
         setSelected(null);
@@ -1554,46 +1556,46 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           <span className="hidden font-medium text-white/85 sm:inline">· {STAGES[stage].name}</span>
         </span>
         {/* gold + terminated */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-300 sm:text-base" title="Total gold">
+        <div className="flex items-center gap-3 sm:gap-4 lg:gap-6">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-300 sm:text-base lg:gap-2 lg:text-xl" title="Total gold">
             <Icon.Coin />
             {gold}
           </span>
-          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base" title="Total kills">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-white sm:text-base lg:gap-2 lg:text-xl" title="Total kills">
             <Icon.Skull />
             {kills}
           </span>
         </div>
-        {/* controls */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        {/* controls - roomy, well-spaced, thumb-sized targets that grow on iPad landscape */}
+        <div className="flex items-center gap-3 sm:gap-4 lg:gap-5">
           <button
             onClick={() => setShowSettings(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95 sm:h-10 sm:w-10 lg:h-16 lg:w-16 lg:rounded-2xl lg:border-2"
             aria-label="Settings"
           >
             <Icon.Gear />
           </button>
           <button
             onClick={cycleSpeed}
-            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-medium text-white active:scale-95"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-white/15 px-2 text-sm font-medium text-white active:scale-95 sm:h-10 sm:min-w-10 lg:h-16 lg:min-w-16 lg:rounded-2xl lg:border-2 lg:px-4 lg:text-2xl"
             aria-label={`Game speed ${speed} times, tap to change`}
           >
             {speed}x
           </button>
           <button
             onClick={togglePause}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/90 active:scale-95 sm:h-10 sm:w-10 lg:h-16 lg:w-16 lg:rounded-2xl lg:border-2"
             aria-label={paused ? "Resume" : "Pause"}
             aria-pressed={paused}
           >
             {paused ? <Icon.Play /> : <Icon.Pause />}
           </button>
-          <div className="flex items-center gap-1.5">
-            <span className="max-w-[8rem] truncate text-sm font-medium text-white/90 sm:text-base">
+          <div className="flex items-center gap-1.5 lg:gap-2.5">
+            <span className="max-w-[8rem] truncate text-sm font-medium text-white/90 sm:text-base lg:max-w-none lg:text-xl">
               {country.name}
             </span>
             <div
-              className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30"
+              className="h-7 w-10 rounded-md bg-cover bg-center ring-1 ring-white/30 lg:h-11 lg:w-16 lg:rounded-lg lg:ring-2"
               style={{ backgroundImage: `url(${flagUrl(code)})` }}
               title={country.name}
               role="img"

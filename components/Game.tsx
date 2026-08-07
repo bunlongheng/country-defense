@@ -178,12 +178,13 @@ function Confetti({ gold }: { gold: boolean }) {
 const FIRST_WAVE_DELAY = 6; // seconds to build before the very first wave
 const NEXT_WAVE_DELAY = 4; // seconds between waves (auto-start)
 
-// Radial build menu: the 8 towers sit on a ring around the tapped tile, forming
-// a donut with the placement spot open in the middle (tap outside or Esc to
-// close). The ring radius is computed per-open (responsive + edge-clamped);
-// MENU_AROUND holds unit-circle offsets, clockwise from the top.
-const MENU_AROUND: [number, number][] = Array.from({ length: 8 }, (_, i) => {
-  const a = -Math.PI / 2 + (i * Math.PI * 2) / 8;
+// Radial build menu: the buildable towers sit on a ring around the tapped tile,
+// forming a donut with the placement spot open in the middle (tap outside or Esc
+// to close). The ring radius is computed per-open (responsive + edge-clamped);
+// MENU_AROUND holds unit-circle offsets, clockwise from the top - one slot per
+// buildable tower, so adding a tower to TOWER_ORDER grows the ring automatically.
+const MENU_AROUND: [number, number][] = Array.from({ length: TOWER_ORDER.length }, (_, i) => {
+  const a = -Math.PI / 2 + (i * Math.PI * 2) / TOWER_ORDER.length;
   return [Math.cos(a), Math.sin(a)];
 });
 

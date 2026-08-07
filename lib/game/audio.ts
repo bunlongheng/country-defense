@@ -113,6 +113,11 @@ const SHOOT: Record<TowerType, () => void> = {
     blip(120, 0.22, "sine", 0.6, 320);
     noise(0.1, 0.14, 500);
   },
+  // black wind: a low, dark whoosh of gusting air with a hollow descending moan
+  wind: () => {
+    noise(0.22, 0.18, 480);
+    blip(240, 0.2, "sine", 0.22, 70);
+  },
   // the white Line Laser: a blazing sci-fi beam - a bright descending zap over a
   // gritty underlayer and a searing sizzle, so the full-screen shot really lands
   roamer: () => {

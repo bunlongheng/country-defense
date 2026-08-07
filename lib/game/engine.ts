@@ -18,6 +18,7 @@ export const FROST_DURATION = 1.2; // seconds a slow lasts after the last hit
 export const FREEZE_DURATION = 3; // frost freezes an enemy solid for 3s
 export const FREEZE_IMMUNE = 2.5; // after a thaw, frost can't re-freeze for this long
 export const SLIME_SLOW_DURATION = 5; // slime's slow lingers for 5s
+export const WIND_DOT_DURATION = 3; // black wind slows AND rots hp for 3s after each gust
 const SHOCK_DURATION = 0.35; // how long the tesla electric arc shows on a foe
 
 // Stamp the per-tower status effect (electric arc / freeze) onto a hit enemy.
@@ -59,6 +60,10 @@ export function moveEnemies(
     // frost freezes an enemy solid (no movement); otherwise a slow may apply
     const frozen = e.frozenUntil !== undefined && time < e.frozenUntil;
     const mul = frozen ? 0 : time < e.slowUntil ? e.slowMul : 1;
+    // black wind: keep draining hp for the whole poison window (reaped next step)
+    if (e.poisonDps && e.poisonUntil !== undefined && time < e.poisonUntil) {
+      e.hp -= e.poisonDps * dt;
+    }
     e.dist += e.speed * mul * dt;
     if (e.dist >= pathLen) {
       leaked++;
@@ -153,7 +158,12 @@ export function fireTowers(
 
     const stats = towerStats(tower.type, tower.level);
     tower.cooldown = 1 / stats.fireRate;
-    const slowDur = tower.type === "slime" ? SLIME_SLOW_DURATION : FROST_DURATION;
+    const slowDur =
+      tower.type === "slime"
+        ? SLIME_SLOW_DURATION
+        : tower.type === "wind"
+          ? WIND_DOT_DURATION
+          : FROST_DURATION;
     // bigger shots at higher levels: +15% visual size per level (lvl1 = 1x, lvl5 = 1.6x)
     const shotScale = 1 + (tower.level - 1) * 0.15;
     // shots leave the BARREL MUZZLE (offset along the aim), not the tower centre
@@ -179,7 +189,7 @@ export function fireTowers(
     }
 
     // primary hit
-    applyHit(target, stats.damage, stats.slow, time, slowDur);
+    applyHit(target, stats.damage, stats.slow, time, slowDur, stats.dot);
     markEffect(target, tower.type, time);
     projectiles.push({
       id: projId,
@@ -195,7 +205,7 @@ export function fireTowers(
     // cannon splash: everyone near the target takes the hit too
     if (stats.splash > 0) {
       for (const e of enemiesInRadius(target.pos, stats.splash, enemies, target.id)) {
-        applyHit(e, Math.round(stats.damage * 0.6), stats.slow, time, slowDur);
+        applyHit(e, Math.round(stats.damage * 0.6), stats.slow, time, slowDur, stats.dot);
         markEffect(e, tower.type, time);
       }
     }
@@ -238,11 +248,17 @@ function applyHit(
   slow: number,
   time: number,
   slowDur = FROST_DURATION,
+  dot?: number,
 ) {
   enemy.hp -= damage;
   if (slow > 0) {
     enemy.slowMul = 1 - slow;
     enemy.slowUntil = time + slowDur;
+  }
+  // black wind: stamp (or refresh) the rot so it keeps draining hp for the window
+  if (dot && dot > 0) {
+    enemy.poisonDps = dot;
+    enemy.poisonUntil = time + WIND_DOT_DURATION;
   }
 }
 

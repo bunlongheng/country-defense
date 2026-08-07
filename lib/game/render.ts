@@ -816,6 +816,10 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
     if (s.gameTime < (e.frozenUntil ?? 0)) drawFreeze(ctx, p.x, p.y, r);
     // tesla: crackling electric arc over the enemy right after a hit
     if (s.gameTime < (e.shockUntil ?? 0)) drawShock(ctx, p.x, p.y, r, e.id, s.time);
+    // black wind: a dark rot-haze swirls around a poisoned enemy while it drains
+    if (e.poisonUntil !== undefined && s.gameTime < e.poisonUntil) {
+      drawPoisonHaze(ctx, p.x, p.y, r, e.id, s.time);
+    }
 
     // health bar: small, faint, and only when the enemy is actually hurt
     if (e.hp < e.maxHp) {
@@ -1321,6 +1325,53 @@ export function drawTower(
   ctx.fill();
   ctx.restore();
 
+  // the special white tank is the hero unit, so it gets a full WET-GLOSS treatment:
+  // a pulsing gold chrome trim, a bright top-crescent shine sweeping across the
+  // dome, a soft wet hotspot, and a hard pinpoint sparkle - gloss, gloss, gloss.
+  if (t.type === "roamer") {
+    const shimmer = 0.7 + 0.25 * Math.sin(time * 2.5 + t.id);
+    ctx.lineWidth = Math.max(1.4, R * 0.08);
+    ctx.strokeStyle = `rgba(251,191,36,${shimmer})`; // gold chrome trim on the rim
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, domeR * 0.97, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, domeR, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 1) glossy top-crescent: a bright curved band hugging the lit top edge - the
+    // single most "glossy" cue on a sphere (like light wrapping a glass marble)
+    const cy2 = p.y + LIGHT.y * domeR * 0.6;
+    const cres = ctx.createLinearGradient(p.x, cy2 - domeR * 0.7, p.x, cy2 + domeR * 0.5);
+    cres.addColorStop(0, "rgba(255,255,255,0.95)");
+    cres.addColorStop(0.55, "rgba(255,255,255,0.18)");
+    cres.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = cres;
+    ctx.beginPath();
+    ctx.ellipse(p.x + LIGHT.x * domeR * 0.25, cy2, domeR * 0.82, domeR * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2) soft wet hotspot
+    const hx = p.x + LIGHT.x * domeR * 0.42;
+    const hy = p.y + LIGHT.y * domeR * 0.42;
+    const hot = ctx.createRadialGradient(hx, hy, 1, hx, hy, domeR * 0.5);
+    hot.addColorStop(0, "rgba(255,255,255,1)");
+    hot.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = hot;
+    ctx.beginPath();
+    ctx.arc(hx, hy, domeR * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3) hard pinpoint sparkle - the tiny blown-out glint that sells wet gloss
+    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.beginPath();
+    ctx.arc(hx, hy, Math.max(1.2, domeR * 0.12), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // emblem so kids can tell the towers apart - the two that used emoji now get
   // real drawn vector icons; the rest are clean unicode symbols
   if (t.type === "bomber") {
@@ -1337,14 +1388,10 @@ export function drawTower(
   } else if (t.type === "frost") {
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "roamer") {
-    // a thin dark bar across the white dome, hinting the horizontal beam (no snow)
-    ctx.strokeStyle = "rgba(40,50,70,0.7)";
-    ctx.lineWidth = Math.max(1.5, R * 0.1);
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(p.x - R * 0.32, p.y);
-    ctx.lineTo(p.x + R * 0.32, p.y);
-    ctx.stroke();
+    // a golden star crest marks the hero tank as the special one
+    drawGoldStar(ctx, p.x, p.y, R * 0.95);
+  } else if (t.type === "wind") {
+    drawWindSwirl(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
@@ -1358,10 +1405,41 @@ export function drawTower(
   // The tower earns a waving national flag from level 3 up, growing each level:
   // small at lvl3, medium at lvl4, biggest at lvl5. (Level is read off the star
   // pips in the upgrade panel, so no need to stamp it on the tower itself.)
-  if (t.level >= 3) {
+  if (t.type === "roamer") {
+    // the special free tank PROUDLY flies the nation's flag at all times, growing
+    // a touch with each upgrade (it's the hero unit - it always waves its colours)
+    const flagScale = 1.0 + (t.level - 1) * 0.12;
+    towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
+  } else if (t.level >= 3) {
     const flagScale = t.level === 3 ? 0.72 : t.level === 4 ? 1 : 1.3;
     towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
   }
+}
+
+// A golden 5-point star crest for the hero (white Line Laser) tank - a filled
+// gold star with a warm rim, so the special tank reads as decorated, not plain.
+function drawGoldStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const R2 = s * 0.5;
+  const r2 = s * 0.2;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? R2 : r2;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const x = cx + Math.cos(a) * rad;
+    const y = cy + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const g = ctx.createRadialGradient(cx - R2 * 0.3, cy - R2 * 0.3, 1, cx, cy, R2);
+  g.addColorStop(0, "#fff7d6");
+  g.addColorStop(0.5, "#fbbf24");
+  g.addColorStop(1, "#b45309");
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = "rgba(120,70,10,0.8)";
+  ctx.stroke();
 }
 
 // A clean glossy goo-ball icon, centered on the dome (no more lopsided teardrop).
@@ -1461,6 +1539,33 @@ function drawBolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: numb
   ctx.lineTo(cx + w * 0.04, cy - h * 0.12);
   ctx.closePath();
   ctx.fill();
+}
+
+// A black wind swirl - a coiled spiral gust, the Black Wind tank's emblem, drawn
+// dark so it reads as a jet-black vortex on the grey dome.
+function drawWindSwirl(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const r = s * 0.5;
+  ctx.strokeStyle = "rgba(10,12,16,0.9)";
+  ctx.lineWidth = Math.max(1.4, s * 0.11);
+  ctx.lineCap = "round";
+  // an inward spiral (~1.4 turns)
+  ctx.beginPath();
+  const turns = 1.4;
+  const steps = 26;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const ang = t * turns * Math.PI * 2;
+    const rad = r * (1 - t * 0.82);
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // a faint grey glint along the coil so the black swirl still has depth
+  ctx.strokeStyle = "rgba(200,205,215,0.35)";
+  ctx.lineWidth = Math.max(1, s * 0.045);
+  ctx.stroke();
 }
 
 function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
@@ -1590,6 +1695,31 @@ function drawFreeze(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: nu
 // A real-looking electrocution: a crackling electric-blue aura plus several
 // forked lightning arcs snaking ACROSS the sphere, drawn as a glowing blue
 // underlay with a white-hot core, flickering fast.
+// Black-wind rot: a dark haze with a few soot wisps orbiting a poisoned enemy, so
+// you can see at a glance which foes are being drained by the grey tank's gust.
+function drawPoisonHaze(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
+  const pulse = 0.28 + 0.12 * Math.sin(time * 5 + seed * 3);
+  const haze = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.5);
+  haze.addColorStop(0, "rgba(18,20,26,0)");
+  haze.addColorStop(0.65, `rgba(18,20,26,${pulse})`);
+  haze.addColorStop(1, "rgba(18,20,26,0)");
+  ctx.fillStyle = haze;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  // 3 soot wisps orbiting the marble
+  ctx.fillStyle = "rgba(28,30,38,0.75)";
+  for (let k = 0; k < 3; k++) {
+    const ang = time * 2.2 + seed + (k / 3) * Math.PI * 2;
+    const rad = r * (1.05 + 0.12 * Math.sin(time * 4 + k));
+    const wx = cx + Math.cos(ang) * rad;
+    const wy = cy + Math.sin(ang) * rad;
+    ctx.beginPath();
+    ctx.arc(wx, wy, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawShock(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, time: number) {
   // pulsing electric aura
   const pulse = 0.35 + 0.25 * Math.sin(time * 34 + seed * 5);
@@ -1835,6 +1965,59 @@ function drawShot(
       ctx.beginPath();
       ctx.arc(a.x, a.y, mr, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+    case "wind": {
+      // BLACK WIND: a dark gust swirls out of the barrel to the target, then a black
+      // vortex billows over it. Drawn with a soft dark cloud + a spiral wisp so it
+      // reads as a rotting gust, not just smoke.
+      const prog = Math.min(1, Math.max(0, 1 - pr.ttl / 0.18));
+      const px = a.x + (b.x - a.x) * prog;
+      const py = a.y + (b.y - a.y) * prog;
+      const gustR = s * (0.16 + prog * 0.26);
+      // trailing dark cloud following the gust
+      for (let k = 0; k < 3; k++) {
+        const t2 = prog - k * 0.14;
+        if (t2 < 0) continue;
+        const gx = a.x + (b.x - a.x) * t2;
+        const gy = a.y + (b.y - a.y) * t2;
+        const gr = gustR * (1 - k * 0.22);
+        const g = ctx.createRadialGradient(gx, gy, 1, gx, gy, gr);
+        g.addColorStop(0, `rgba(18,20,26,${0.7 - k * 0.18})`);
+        g.addColorStop(1, "rgba(18,20,26,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // a coiled wisp spiralling inside the lead gust (the "wind")
+      ctx.strokeStyle = `rgba(35,38,48,${0.75 * (1 - prog * 0.3)})`;
+      ctx.lineWidth = Math.max(1, s * 0.05);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      const turns = 1.3;
+      for (let i = 0; i <= 18; i++) {
+        const t = i / 18;
+        const ang = t * turns * Math.PI * 2 + prog * 6 + pr.jitter * 8;
+        const rad = gustR * 0.9 * (1 - t * 0.75);
+        const wx = px + Math.cos(ang) * rad;
+        const wy = py + Math.sin(ang) * rad;
+        if (i === 0) ctx.moveTo(wx, wy);
+        else ctx.lineTo(wx, wy);
+      }
+      ctx.stroke();
+      // dark burst billowing on the target as the gust lands
+      if (prog > 0.7) {
+        const sp = (prog - 0.7) / 0.3;
+        const br = s * (0.18 + sp * 0.5);
+        const bg = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, br);
+        bg.addColorStop(0, `rgba(12,14,18,${(1 - sp) * 0.7})`);
+        bg.addColorStop(1, "rgba(12,14,18,0)");
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, br, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
     }
     case "frost": {
@@ -2166,19 +2349,22 @@ function drawBase(
   ctx.ellipse(cx, padY, padRx * 0.16, padRy * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // --- glow behind the real 3D marble (rendered as a WebGL overlay in React) ---
-  // themed normally, glows red once the base is hurt (brighter as it nears death)
+  // --- damage flash behind the real 3D marble (WebGL overlay in React) ---
+  // no halo while healthy (the themed glow read as an ugly white ring around the
+  // sphere for light-coloured flags); it only glows RED once the base is hurt, as
+  // a clear "you're taking damage" cue that brightens as it nears death
   const red = Math.min(1, hurt * 1.3);
-  const haloColor = red > 0 ? "#ef4444" : accent;
-  const haloR = r * (1.5 + red * 0.5);
-  const pulse = 0.45 + (red > 0 ? 0.25 * Math.sin(time * 6) : 0);
-  const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, haloR);
-  halo.addColorStop(0, hexA(haloColor, pulse + red * 0.3));
-  halo.addColorStop(1, hexA(haloColor, 0));
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
-  ctx.fill();
+  if (red > 0) {
+    const haloR = r * (1.5 + red * 0.5);
+    const pulse = 0.45 + 0.25 * Math.sin(time * 6);
+    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, haloR);
+    halo.addColorStop(0, hexA("#ef4444", pulse + red * 0.3));
+    halo.addColorStop(1, hexA("#ef4444", 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // the spinning glossy flag marble itself is a real 3D WebGL sphere rendered as
   // a React overlay pinned over this tile (same marble as the country select), so

@@ -134,10 +134,13 @@ test("the journey has 10 stages that ramp up and stay on-grid", () => {
   }
 });
 
-test("there are 8 distinct tower types incl. laser, sniper, slime and bomber", () => {
-  assert.equal(TOWER_ORDER.length, 8);
-  assert.equal(new Set(TOWER_ORDER).size, 8);
+test("there are 9 distinct tower types incl. laser, sniper, slime, bomber and wind", () => {
+  assert.equal(TOWER_ORDER.length, 9);
+  assert.equal(new Set(TOWER_ORDER).size, 9);
   assert.ok(TOWER_DEFS.laser, "laser exists");
+  // the black-wind tank slows AND rots hp over time (its defining role)
+  assert.ok(TOWER_DEFS.wind.slow > 0, "wind slows");
+  assert.ok((TOWER_DEFS.wind.dot ?? 0) > 0, "wind rots hp over time");
   assert.ok(TOWER_DEFS.sniper.range > TOWER_DEFS.rapid.range, "sniper out-ranges rapid");
   // the slime tower slows hard and splatters (its defining role)
   assert.ok(TOWER_DEFS.slime.slow > 0, "slime slows");
@@ -202,6 +205,22 @@ test("fireTowers damages target, sets cooldown, spends no gold directly", () => 
   assert.ok(target.hp < before, "target took damage");
   assert.ok(tower.cooldown > 0, "cooldown started");
   assert.ok(res.projectiles.length >= 1, "a tracer was emitted");
+});
+
+test("black wind stamps a slow + poison, and the poison keeps draining hp over time", () => {
+  const wind: Tower = { id: 1, type: "wind", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
+  const target = mkEnemy(2, { x: 5, y: 5 }, 6, 200);
+  fireTowers([wind], [target], 0.016, 0);
+  assert.ok(target.slowMul < 1, "wind slows the target");
+  assert.ok((target.poisonDps ?? 0) > 0 && (target.poisonUntil ?? 0) > 0, "wind poisons the target");
+  // the rot keeps ticking on later frames even with no new shot
+  const hpAfterHit = target.hp;
+  moveEnemies([target], 1, 0.5, pathLength());
+  assert.ok(target.hp < hpAfterHit, "poison drained more hp over the next second");
+  // once the poison window passes, no more drain
+  const hpSettled = target.hp;
+  moveEnemies([target], 1, 99, pathLength());
+  assert.equal(target.hp, hpSettled, "poison stops after its window");
 });
 
 test("cannon splash hits neighbours; tesla chains to extra foes", () => {

@@ -16,6 +16,7 @@ export interface TowerDef {
   splash: number; // aoe radius in tiles (0 = single target)
   slow: number; // 0..1 speed multiplier applied to hit enemies (0 = none)
   chain: number; // extra targets hit besides the primary (tesla)
+  dot?: number; // black-wind damage-over-time: hp drained per second while poisoned
 }
 
 // Six distinct tower styles. Each has a clear role so upgrading the right mix
@@ -134,6 +135,21 @@ export const TOWER_DEFS: Record<TowerType, TowerDef> = {
     slow: 0,
     chain: 0,
   },
+  wind: {
+    type: "wind",
+    name: "Black Wind",
+    blurb: "A grey tank that breathes a black gust - slows a whole group and rots their health away",
+    color: "#6b7280", // a cold grey tank; its gust is jet-black
+    icon: "🌀",
+    cost: 75,
+    range: 2.6,
+    damage: 4, // a light gust on contact; the real work is the lingering rot
+    fireRate: 1.4,
+    splash: 0.85, // the black wind billows over a small group, not one foe
+    slow: 0.4, // the choking wind drags everyone it touches down to a crawl
+    chain: 0,
+    dot: 7, // black rot: 7 hp/s drained for the whole poison window (scales with level)
+  },
   // the special white LINE LASER: given free at the start, it stays where you put it
   // and fires a white beam straight across the whole screen at its row, hitting every
   // enemy in that horizontal line (handled in fireTowers). You can reposition it at
@@ -163,6 +179,7 @@ export const TOWER_ORDER: TowerType[] = [
   "tesla",
   "sniper",
   "bomber",
+  "wind",
 ];
 
 // There are only 7 types x 5 levels = 35 possible stat blocks, and towerStats is
@@ -204,6 +221,7 @@ export function towerStats(type: TowerType, level: number): TowerDef {
     range: +(base.range * rangeMul).toFixed(2),
     fireRate,
     chain: base.chain > 0 ? base.chain + (lv - 1) : 0,
+    dot: base.dot ? +(base.dot * dmgMul).toFixed(1) : undefined,
   };
   STATS_CACHE.set(key, stats);
   return stats;

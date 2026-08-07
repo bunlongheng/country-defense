@@ -15,6 +15,7 @@ export type TowerType =
   | "tesla"
   | "slime"
   | "bomber"
+  | "wind"
   | "roamer";
 
 export interface Enemy {
@@ -28,6 +29,8 @@ export interface Enemy {
   reward: number;
   slowUntil: number; // game-time (s) until which the slow applies
   slowMul: number; // speed multiplier while slowed (1 = no slow)
+  poisonUntil?: number; // game-time until which the black-wind damage-over-time ticks
+  poisonDps?: number; // hp drained per second by the black wind while poisoned
   frozenUntil?: number; // game-time until which the enemy is frozen solid (frost)
   freezeImmuneUntil?: number; // after a thaw, frost can only slow (not re-freeze) until this time
   shockUntil?: number; // game-time until which to draw the tesla electric arc

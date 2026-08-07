@@ -1203,8 +1203,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     const onKey = (e: KeyboardEvent) => {
       if (phaseRef.current === "won" || phaseRef.current === "lost") return;
       unlockAudio();
-      const digit = "1234567".indexOf(e.key);
-      if (digit >= 0) {
+      // keys 1..N pick the Nth buildable tower - derived from TOWER_ORDER so every
+      // tower (incl. the bomber and the new Black Wind) has a hotkey, not just 7
+      const digit = e.key >= "1" && e.key <= "9" ? Number(e.key) - 1 : -1;
+      if (digit >= 0 && digit < TOWER_ORDER.length) {
         setSelected(null);
         setBuildType(TOWER_ORDER[digit]);
         return;
@@ -1610,8 +1612,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             />
           )}
 
-          {/* square build menu: 8 tiles around the center (the tile you're placing
-              on stays open in the middle so it is never covered) */}
+          {/* radial build menu: one petal per buildable tower around the center (the
+              tile you're placing on stays open in the middle so it is never covered) */}
           {menu && (
             <>
               {/* a transparent tap-catcher to close on an outside tap - NO full-screen

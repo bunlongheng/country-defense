@@ -182,7 +182,7 @@ export const TOWER_ORDER: TowerType[] = [
   "wind",
 ];
 
-// There are only 7 types x 5 levels = 35 possible stat blocks, and towerStats is
+// There are only a handful of types x 5 levels of possible stat blocks, and towerStats is
 // called several times per tower per frame, so memoize into a small lookup built
 // lazily once instead of allocating a fresh spread object on every call.
 const STATS_CACHE = new Map<string, TowerDef>();

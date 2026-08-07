@@ -65,7 +65,10 @@ export function moveEnemies(
       e.hp -= e.poisonDps * dt;
     }
     e.dist += e.speed * mul * dt;
-    if (e.dist >= pathLen) {
+    // a foe that reached the base leaks and costs a life - UNLESS it just died
+    // (e.g. this frame's black-wind poison tick finished it as it crossed the end):
+    // keep it so reapDead pays out the kill/gold instead of charging a life for a corpse
+    if (e.dist >= pathLen && e.hp > 0) {
       leaked++;
       continue;
     }
@@ -255,9 +258,12 @@ function applyHit(
     enemy.slowMul = 1 - slow;
     enemy.slowUntil = time + slowDur;
   }
-  // black wind: stamp (or refresh) the rot so it keeps draining hp for the window
+  // black wind: stamp (or refresh) the rot so it keeps draining hp for the window.
+  // Refresh always extends the window, but never DOWNGRADES an already-stronger rot
+  // (a lvl1 gust must not weaken a lvl5 gust's poison on the same foe).
   if (dot && dot > 0) {
-    enemy.poisonDps = dot;
+    const active = enemy.poisonUntil !== undefined && time < enemy.poisonUntil;
+    enemy.poisonDps = active ? Math.max(enemy.poisonDps ?? 0, dot) : dot;
     enemy.poisonUntil = time + WIND_DOT_DURATION;
   }
 }

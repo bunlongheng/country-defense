@@ -224,6 +224,21 @@ test("black wind stamps a slow + poison, and the poison keeps draining hp over t
   assert.equal(target.hp, hpSettled, "poison stops after its window");
 });
 
+test("a poison tick that kills a foe AS it reaches the base pays out, never leaks", () => {
+  const len = pathLength();
+  // one hp left, deep in a black-wind rot, arriving at the base this very frame
+  const dying = mkEnemy(1, { x: 0, y: 1 }, len - 0.005, 1);
+  dying.poisonDps = 100;
+  dying.poisonUntil = 10;
+  const res = moveEnemies([dying], 0.1, 0, len); // crosses the end AND the poison finishes it
+  assert.equal(res.leaked, 0, "a corpse at the base is not a leak - no life lost");
+  assert.equal(res.survivors.length, 1, "kept so reapDead can pay the bounty");
+  assert.ok(res.survivors[0].hp <= 0, "it did die from the rot");
+  const reaped = reapDead(res.survivors);
+  assert.equal(reaped.kills, 1, "counted as a kill");
+  assert.equal(reaped.gold, 8, "bounty paid, not forfeited");
+});
+
 test("cannon splash hits neighbours; tesla chains to extra foes", () => {
   const cannon: Tower = { id: 1, type: "cannon", cell: { x: 5, y: 5 }, level: 1, cooldown: 0 };
   const a = mkEnemy(2, { x: 5, y: 5 }, 6, 200);

@@ -65,7 +65,6 @@ import {
   MAX_EFFICIENCY_BONUS,
   saveScore,
   highScore,
-  formatWhen,
   type ScoreEntry,
 } from "@/lib/game/score";
 import {
@@ -106,50 +105,109 @@ const CONFETTI_PIECES = Array.from({ length: 48 }, (_, i) => {
   };
 });
 
-// Game-over score card: the run's final score, whether it's a new best, and the
-// device's top-5 board with timestamps.
+// One leaderboard row (rank, flag, country, how far it got, when, score).
+function ScoreRow({ e, i }: { e: ScoreEntry; i: number }) {
+  // older rows were saved before we stored the flag code - fall back to resolving
+  // it from the country name so every row still gets a flag
+  const fcode = e.code ?? COUNTRIES.find((c) => c.name === e.country)?.code;
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-3 text-white/35">{i + 1}</span>
+      {fcode ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={flagUrl(fcode)}
+          alt=""
+          className="h-3 w-4 shrink-0 rounded-[2px] object-cover ring-1 ring-white/20"
+        />
+      ) : (
+        <span className="h-3 w-4 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-white/75">{e.country}</span>
+      {/* how far this run got - the "highest stage" cue on every row */}
+      <span className="shrink-0 rounded bg-white/10 px-1 text-[9px] font-semibold text-white/70">
+        S{e.stage ?? 1}·W{e.wave ?? 1}
+      </span>
+      <span className="w-12 shrink-0 text-right font-medium text-white">
+        {e.score.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+// Game-over score card: this run's final score + how far it got, whether it's a
+// new best, and the device board. With more than a handful of entries the board
+// auto-scrolls like end-of-movie credits (a seamless vertical marquee) so you can
+// watch the whole leaderboard roll by without touching anything.
 function ScorePanel({
   r,
 }: {
-  r: { final: number; prevBest: number; isBest: boolean; board: ScoreEntry[] };
+  r: {
+    final: number;
+    prevBest: number;
+    isBest: boolean;
+    board: ScoreEntry[];
+    stage: number;
+    wave: number;
+    stagesCleared: number;
+    outcome: "won" | "lost";
+  };
 }) {
+  const rows = r.board;
+  const scroll = rows.length > 6; // only roll the credits when it won't all fit
+  const rollSecs = Math.max(8, rows.length * 1.4);
   return (
     <div className="w-full max-w-xs rounded-xl bg-black/40 p-3 text-center ring-1 ring-white/10">
       <div className="text-3xl font-black text-white">{r.final.toLocaleString()}</div>
       <div className="text-[10px] font-medium uppercase tracking-widest text-white/45">Score</div>
+      {/* how far this run got - the highest stage reached, shown for every game */}
+      <div className="mt-1 text-xs font-semibold text-cyan-300">
+        {r.outcome === "won"
+          ? `Cleared all ${r.stagesCleared} stages 🏆`
+          : `Reached Stage ${r.stage} · Wave ${r.wave}` +
+            (r.stagesCleared > 0 ? ` · ${r.stagesCleared} stage${r.stagesCleared > 1 ? "s" : ""} cleared` : "")}
+      </div>
       {r.isBest ? (
         <div className="mt-1 text-sm font-black text-white">🎉 New high score!</div>
       ) : (
         <div className="mt-1 text-xs text-white/55">Best {r.prevBest.toLocaleString()}</div>
       )}
-      {r.board.length > 0 && (
-        <div className="mt-3 space-y-1 text-left">
-          {r.board.slice(0, 5).map((e, i) => {
-            // older rows were saved before we stored the flag code - fall back to
-            // resolving it from the country name so every row still gets a flag
-            const fcode = e.code ?? COUNTRIES.find((c) => c.name === e.country)?.code;
-            return (
-            <div key={i} className="flex items-center gap-2 text-[11px]">
-              <span className="w-3 text-white/35">{i + 1}</span>
-              {fcode ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={flagUrl(fcode)}
-                  alt=""
-                  className="h-3 w-4 shrink-0 rounded-[2px] object-cover ring-1 ring-white/20"
-                />
-              ) : (
-                <span className="h-3 w-4 shrink-0" />
-              )}
-              <span className="flex-1 truncate text-white/75">{e.country}</span>
-              <span className="text-white/35">{formatWhen(e.date)}</span>
-              <span className="w-12 text-right font-medium text-white">
-                {e.score.toLocaleString()}
-              </span>
+      {rows.length > 0 && (
+        <>
+          <div className="mt-3 text-[9px] font-semibold uppercase tracking-widest text-white/30">
+            Leaderboard
+          </div>
+          {scroll ? (
+            <div
+              className="relative mt-1 h-[150px] overflow-hidden"
+              style={{
+                maskImage:
+                  "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
+                WebkitMaskImage:
+                  "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
+              }}
+            >
+              <div
+                className="absolute inset-x-0 top-0 space-y-1 text-left"
+                style={{ animation: `creditsRoll ${rollSecs}s linear infinite` }}
+              >
+                {/* the list twice, so translateY(-50%) loops seamlessly */}
+                {rows.map((e, i) => (
+                  <ScoreRow key={`a${i}`} e={e} i={i} />
+                ))}
+                {rows.map((e, i) => (
+                  <ScoreRow key={`b${i}`} e={e} i={i} />
+                ))}
+              </div>
             </div>
-            );
-          })}
-        </div>
+          ) : (
+            <div className="mt-1 space-y-1 text-left">
+              {rows.map((e, i) => (
+                <ScoreRow key={i} e={e} i={i} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -329,6 +387,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     prevBest: number;
     isBest: boolean;
     board: ScoreEntry[];
+    stage: number; // stage reached this run (1-based)
+    wave: number; // wave reached this run (1-based)
+    stagesCleared: number; // whole stages fully cleared this run
+    outcome: "won" | "lost";
   } | null>(null);
   const [phase, setPhaseState] = useState<Phase>("ready");
   const [buildType, setBuildType] = useState<TowerType | null>("laser");
@@ -553,11 +615,21 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // hoards coins can never rival a run that pushed more stages deep.
   const finalizeScore = useCallback(
     (outcome: "won" | "lost") => {
-      const efficiency = Math.min(
-        livesRef.current * POINTS.lifePerLeft + goldRef.current * POINTS.goldPerLeft,
-        MAX_EFFICIENCY_BONUS,
-      );
+      // the lives + leftover-gold bonus rewards EFFICIENT SURVIVAL, so it only
+      // applies on a win. On a loss you're dead (0 lives) and hoarded gold must not
+      // pay out - the score is then purely how far you got (waves + stages + kills).
+      const efficiency =
+        outcome === "won"
+          ? Math.min(
+              livesRef.current * POINTS.lifePerLeft + goldRef.current * POINTS.goldPerLeft,
+              MAX_EFFICIENCY_BONUS,
+            )
+          : 0;
       const final = scoreRef.current + efficiency;
+      // stages fully cleared: you advance to the next stage only after clearing one,
+      // so the current 0-based stage index IS the count of stages beaten (all of them
+      // on a win). stageReached is 1-based for display.
+      const stagesCleared = outcome === "won" ? TOTAL_STAGES : stageRef.current;
       const prevBest = highScore();
       const board = saveScore({
         score: final,
@@ -568,7 +640,16 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         country: country?.name ?? code,
         code,
       });
-      setResult({ final, prevBest, isBest: final > prevBest, board });
+      setResult({
+        final,
+        prevBest,
+        isBest: final > prevBest,
+        board,
+        stage: stageRef.current + 1,
+        wave: waveRef.current,
+        stagesCleared,
+        outcome,
+      });
     },
     [code, country],
   );
@@ -1589,6 +1670,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             @keyframes confettiFall { 0%{transform:translateY(-30px) rotate(0deg);opacity:1} 100%{transform:translateY(95vh) rotate(720deg);opacity:.85} }
             @keyframes trophySpin { 0%{transform:rotateY(0deg) scale(1)} 50%{transform:rotateY(180deg) scale(1.08)} 100%{transform:rotateY(360deg) scale(1)} }
             @keyframes popIn { 0%{transform:scale(.4);opacity:0} 60%{transform:scale(1.1);opacity:1} 100%{transform:scale(1)} }
+            @keyframes creditsRoll { from{transform:translateY(0)} to{transform:translateY(-50%)} }
           `}</style>
           {nukeCount !== null && (
             <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">

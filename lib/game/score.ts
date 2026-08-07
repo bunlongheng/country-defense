@@ -13,7 +13,10 @@ export interface ScoreEntry {
   code?: string; // flag code (for the tiny flag in the board; older rows lack it)
 }
 
-const KEY = "country-defense:scores";
+// v2: the scoring formula was rebalanced (distance-weighted, loss gives no gold
+// bonus), so the old board is wiped once and for all by moving to a fresh key -
+// old entries scored under the old rules would rank incoherently against new ones.
+const KEY = "country-defense:scores:v2";
 const MAX_KEPT = 25;
 
 // Score weighting - HOW FAR you get is everything. A whole stage cleared is worth
@@ -37,6 +40,8 @@ export const MAX_EFFICIENCY_BONUS = 2500;
 export function loadScores(): ScoreEntry[] {
   if (typeof window === "undefined") return [];
   try {
+    // one-time cleanup of the pre-rebalance board so it can never resurface
+    window.localStorage.removeItem("country-defense:scores");
     const raw = window.localStorage.getItem(KEY);
     const arr = raw ? (JSON.parse(raw) as ScoreEntry[]) : [];
     return Array.isArray(arr) ? arr : [];

@@ -37,7 +37,7 @@ import {
   BASE_CELL,
 } from "../lib/game/map.ts";
 import { STAGES, TOTAL_STAGES, stageBase } from "../lib/game/stages.ts";
-import { POINTS, MAX_EFFICIENCY_BONUS } from "../lib/game/score.ts";
+import { POINTS, STAGE_BONUS, MAX_STAGE_BONUS, stageEfficiencyBonus } from "../lib/game/score.ts";
 import { dist, hexA } from "../lib/game/math.ts";
 import type { Enemy, Tower } from "../lib/game/types.ts";
 
@@ -264,16 +264,35 @@ test("reapDead awards gold for kills and keeps the living", () => {
   assert.equal(res.survivors.length, 1);
 });
 
-test("scoring judges by distance: one more stage always outranks hoarding lives+gold", () => {
-  // clearing a whole stage is worth more than every wave in it PLUS the full
-  // efficiency (lives+gold) tiebreaker, so pushing one stage deeper can never be
-  // beaten by a shorter run that hoarded coins and kept its lives
-  const maxHoardWithinAStage = (TOTAL_WAVES - 1) * POINTS.wave + MAX_EFFICIENCY_BONUS;
-  assert.ok(POINTS.stage > maxHoardWithinAStage, "a stage clear dwarfs any hoard");
-  // the efficiency bonus is a tiebreaker, never a way to buy a stage of rank
-  assert.ok(MAX_EFFICIENCY_BONUS < POINTS.stage, "efficiency can't bridge a stage");
-  // progress out-weighs grinding: a stage clear beats a wave, a wave beats a kill
+test("scoring judges by distance first, efficiency second - never the reverse", () => {
+  // an unfinished stage earns waves+kills but NO stage points and NO stage bonus,
+  // so the buffer that guarantees "one stage deeper always wins" is the stage award
+  // itself dwarfing the most a partial stage can scrape (its 9 waves + a stage of kills)
+  const maxPartialStage = (TOTAL_WAVES - 1) * POINTS.wave + 200 * POINTS.kill;
+  assert.ok(POINTS.stage > maxPartialStage, "a stage clear dwarfs a partial stage");
+  // the per-stage efficiency bonus can never itself equal a stage of progress
+  assert.ok(MAX_STAGE_BONUS < POINTS.stage, "efficiency can't buy a stage of rank");
+  // progress out-weighs grinding: a stage beats a wave, a wave beats a kill
   assert.ok(POINTS.stage > POINTS.wave && POINTS.wave > POINTS.kill);
+});
+
+test("stage efficiency bonus rewards lives, saved gold, unused nuke, and a fast clear", () => {
+  const perfectFast = stageEfficiencyBonus(10, 5000, false, 0); // full lives, rich, nuke saved, instant
+  const perfectSlow = stageEfficiencyBonus(10, 5000, false, 300); // same but a long, slow clear
+  assert.ok(perfectFast > perfectSlow, "a faster clear scores higher");
+  // using the nuke costs exactly the nuke-saved bonus
+  const saved = stageEfficiencyBonus(6, 400, false, 60);
+  const nuked = stageEfficiencyBonus(6, 400, true, 60);
+  assert.equal(saved - nuked, STAGE_BONUS.nukeSaved, "unused nuke is worth its bonus");
+  // more lives (less damage) and more leftover gold both raise the bonus
+  assert.ok(stageEfficiencyBonus(9, 400, true, 60) > stageEfficiencyBonus(2, 400, true, 60), "lives matter");
+  assert.ok(stageEfficiencyBonus(5, 1200, true, 60) > stageEfficiencyBonus(5, 100, true, 60), "saved gold matters");
+  // gold is capped so it can't run away
+  assert.equal(
+    stageEfficiencyBonus(0, 99999, true, 9e9),
+    stageEfficiencyBonus(0, STAGE_BONUS.goldCap, true, 9e9),
+    "gold beyond the cap adds nothing",
+  );
 });
 
 test("frost slow expires after its duration - enemy resumes full speed", () => {

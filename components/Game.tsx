@@ -62,7 +62,7 @@ import { STAGES, TOTAL_STAGES, stageBase } from "@/lib/game/stages";
 import { loadSprite } from "@/lib/game/sprites";
 import {
   POINTS,
-  MAX_EFFICIENCY_BONUS,
+  stageEfficiencyBonus,
   saveScore,
   highScore,
   type ScoreEntry,
@@ -412,6 +412,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const nukeAimRef = useRef<{ x: number; y: number } | null>(null); // pointer while aiming
   const nukeBlastRef = useRef<{ x: number; y: number; born: number } | null>(null); // warhead + cloud
   const holdTimersRef = useRef<number[]>([]); // press-and-hold-the-road charge timers
+  const nukeUsedRef = useRef(false); // read in the game loop to bank the "nuke saved" bonus
   const [nukeUsed, setNukeUsed] = useState(false);
   const [nukeArmed, setNukeArmed] = useState(false);
   const [nukeCount, setNukeCount] = useState<number | null>(null); // 3/2/1 overlay
@@ -631,6 +632,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     nukeBlastRef.current = null;
     holdTimersRef.current.forEach((id) => window.clearTimeout(id));
     holdTimersRef.current = [];
+    nukeUsedRef.current = false; // fresh nuke each stage (drives the "nuke saved" bonus)
     setNukeUsed(false);
     setNukeArmed(false);
     setNukeCount(null);
@@ -656,23 +658,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     resetBoard();
   }, [applyStage, resetBoard]);
 
-  // Tally the final score at game over. The running score (kills + waves + stages)
-  // already encodes HOW FAR the player got and dominates the total. Lives + leftover
-  // gold add only a small, CAPPED efficiency tiebreaker so a cautious short run that
-  // hoards coins can never rival a run that pushed more stages deep.
+  // Tally the final score at game over. Everything is already banked into the running
+  // score as it happens: distance (kills + waves + stages) plus, for every stage
+  // cleared, an efficiency + speed bonus (lives kept, gold saved, nuke unused, fast
+  // clear). A loss keeps whatever the cleared stages earned; the stage you died on
+  // adds nothing. So the final number simply IS the running score.
   const finalizeScore = useCallback(
     (outcome: "won" | "lost") => {
-      // the lives + leftover-gold bonus rewards EFFICIENT SURVIVAL, so it only
-      // applies on a win. On a loss you're dead (0 lives) and hoarded gold must not
-      // pay out - the score is then purely how far you got (waves + stages + kills).
-      const efficiency =
-        outcome === "won"
-          ? Math.min(
-              livesRef.current * POINTS.lifePerLeft + goldRef.current * POINTS.goldPerLeft,
-              MAX_EFFICIENCY_BONUS,
-            )
-          : 0;
-      const final = scoreRef.current + efficiency;
+      const final = scoreRef.current;
       // stages fully cleared: you advance to the next stage only after clearing one,
       // so the current 0-based stage index IS the count of stages beaten (all of them
       // on a win). stageReached is 1-based for display.
@@ -800,7 +793,19 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         setGold(goldRef.current);
         scoreRef.current += POINTS.wave; // every wave cleared counts toward distance
         if (waveRef.current >= TOTAL_WAVES) {
-          scoreRef.current += POINTS.stage; // ...and a whole stage cleared on top
+          // a whole stage cleared: bank the stage points PLUS a bonus that grades HOW
+          // WELL it was beaten - lives kept (little damage), leftover gold (economical),
+          // nuke unused (no panic button), and a fast clear (low SIM combat time, so
+          // the fast-forward speed can't game it). time.current is this stage's combat
+          // seconds (reset each stage).
+          scoreRef.current +=
+            POINTS.stage +
+            stageEfficiencyBonus(
+              livesRef.current,
+              goldRef.current,
+              nukeUsedRef.current,
+              time.current,
+            );
           setScore(scoreRef.current);
           // whole stage cleared
           if (stageRef.current >= TOTAL_STAGES - 1) {
@@ -1068,6 +1073,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       nukeArmedRef.current = false;
       setNukeArmed(false);
       nukeTargetRef.current = { x, y };
+      nukeUsedRef.current = true;
       setNukeUsed(true); // consumed the moment a spot is chosen
       setNukeCount(3);
       playNukeTick(3);
@@ -1111,6 +1117,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           timers.push(window.setTimeout(() => { setNukeCount(1); playNukeTick(1); }, 1700));
           timers.push(
             window.setTimeout(() => {
+              nukeUsedRef.current = true;
               setNukeUsed(true);
               holdTimersRef.current = [];
               launchNuke(); // warhead drops -> boom

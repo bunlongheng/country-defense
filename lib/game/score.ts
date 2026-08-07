@@ -20,22 +20,57 @@ const KEY = "country-defense:scores:v2";
 const MAX_KEPT = 25;
 
 // Score weighting - HOW FAR you get is everything. A whole stage cleared is worth
-// far more than every kill, wave and hoarded coin in it combined, so more stages
-// ALWAYS outranks a cautious short run. Lives + leftover gold are only a small,
-// capped tiebreaker between two runs that got equally far (see MAX_EFFICIENCY_BONUS
-// in Game.tsx) - they can never bridge a full stage of progress.
+// far more than every kill and wave in it combined, so more stages ALWAYS outranks
+// a shorter run. On TOP of that, each stage cleared banks an efficiency + speed
+// bonus (below) that grades HOW WELL you beat it - but that bonus is bounded well
+// under one stage's points, so it can never let a shorter run leapfrog a longer one.
 export const POINTS = {
   kill: 10, // per invader terminated
   wave: 500, // per wave cleared
   stage: 10000, // per whole stage cleared - dominates the score so distance wins
-  lifePerLeft: 100, // per base life still standing at the end (tiebreaker)
-  goldPerLeft: 1, // per gold coin still in the bank at the end (tiebreaker)
 };
 
-// The lives + leftover-gold bonus is capped at this so hoarding can never let a
-// short run rival a longer one. It's a tiebreaker, not a way to buy rank: the cap
-// sits well below one stage's worth of points, so distance is always the judge.
-export const MAX_EFFICIENCY_BONUS = 2500;
+// Per-stage EFFICIENCY + SPEED bonus, banked the moment a stage is cleared so the
+// score reflects how GOOD the clear was, not just that it happened:
+//  - lives still standing  -> you took little damage that stage
+//  - leftover gold          -> you spent economically (capped so hoarding can't run away)
+//  - nuke still in hand      -> you won without the panic button
+//  - fast, decisive clear    -> less COMBAT time. Measured in SIM seconds (the fast-
+//    forward speed multiplies real and sim time equally, so it can't game this); the
+//    reward decays smoothly with time instead of a harsh cutoff.
+// Every term is small on purpose: the whole bonus maxes out far below one stage's
+// 10000, so reaching one stage further always beats playing one stage prettier.
+export const STAGE_BONUS = {
+  perLife: 80, // x lives still standing when the stage clears (10 lives -> 800)
+  goldRate: 0.5, // fraction of leftover gold banked
+  goldCap: 1500, // ...counted only up to this much gold (-> 750 max)
+  nukeSaved: 1000, // cleared the stage without firing the nuke
+  timePool: 1500, // instant clears earn this; it decays with combat time
+  timeScale: 45, // sim-seconds constant: bonus = timePool / (1 + seconds/timeScale)
+};
+
+/** Efficiency + speed points earned for the WAY a single stage was cleared. */
+export function stageEfficiencyBonus(
+  livesLeft: number,
+  goldLeft: number,
+  nukeUsed: boolean,
+  combatSeconds: number,
+): number {
+  const b = STAGE_BONUS;
+  const lives = Math.max(0, livesLeft) * b.perLife;
+  const gold = Math.round(Math.min(Math.max(0, goldLeft), b.goldCap) * b.goldRate);
+  const nuke = nukeUsed ? 0 : b.nukeSaved;
+  const time = Math.round(b.timePool / (1 + Math.max(0, combatSeconds) / b.timeScale));
+  return lives + gold + nuke + time;
+}
+
+// The most a single stage's efficiency bonus can ever add (all 10 lives, gold
+// capped, nuke saved, instant clear) - proven below to stay under one stage.
+export const MAX_STAGE_BONUS =
+  10 * STAGE_BONUS.perLife +
+  STAGE_BONUS.goldCap * STAGE_BONUS.goldRate +
+  STAGE_BONUS.nukeSaved +
+  STAGE_BONUS.timePool;
 
 export function loadScores(): ScoreEntry[] {
   if (typeof window === "undefined") return [];

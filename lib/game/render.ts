@@ -1395,14 +1395,13 @@ export function drawTower(
   } else if (t.type === "frost") {
     drawSnowflake(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "roamer") {
-    // a black stormtrooper visor on the white helmet dome - the hero tank's badge
-    drawTrooperVisor(ctx, p.x, p.y, R * 0.95);
+    // no center emblem - the hero tank is just a clean glossy white helmet dome
   } else if (t.type === "wind") {
     drawWindSwirl(ctx, p.x, p.y, R * 1.0);
   } else if (t.type === "tesla") {
     drawBolt(ctx, p.x, p.y, R * 1.05);
   } else if (t.type === "rapid") {
-    drawStar(ctx, p.x, p.y, R * 1.0);
+    // no emblem - the Smoke tank reads as just its plain dome (like the green tank)
   } else if (t.type === "laser") {
     drawTargetDot(ctx, p.x, p.y, R * 0.95);
   } else {
@@ -1420,38 +1419,6 @@ export function drawTower(
   } else if (t.level >= 3) {
     const flagScale = t.level === 3 ? 0.72 : t.level === 4 ? 1 : 1.3;
     towerFlag(ctx, code, p.x - R * 0.1, p.y - R * 0.35, R, time, t.id, flagScale);
-  }
-}
-
-// A black stormtrooper visor for the hero (white Line Laser) tank: a frowning black
-// eye-band with a white glint, over a short black mouth grille - pure black & white,
-// so the white dome reads as a glossy trooper helmet.
-function drawTrooperVisor(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const w = s * 0.46;
-  const black = "rgba(20,22,28,0.92)";
-  // visor lens: a slightly frowning black band across the eyes
-  ctx.fillStyle = black;
-  ctx.beginPath();
-  ctx.moveTo(cx - w, cy - s * 0.05);
-  ctx.quadraticCurveTo(cx, cy - s * 0.24, cx + w, cy - s * 0.05);
-  ctx.quadraticCurveTo(cx + w * 0.95, cy + s * 0.12, cx, cy + s * 0.07);
-  ctx.quadraticCurveTo(cx - w * 0.95, cy + s * 0.12, cx - w, cy - s * 0.05);
-  ctx.closePath();
-  ctx.fill();
-  // a bright glint on the visor so it reads as glossy glass
-  ctx.fillStyle = "rgba(255,255,255,0.65)";
-  ctx.beginPath();
-  ctx.ellipse(cx - w * 0.42, cy - s * 0.06, w * 0.24, s * 0.05, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  // mouth grille: 3 short black vents below the visor
-  ctx.strokeStyle = black;
-  ctx.lineWidth = Math.max(1, s * 0.05);
-  ctx.lineCap = "round";
-  for (const dx of [-0.15, 0, 0.15]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + s * dx, cy + s * 0.17);
-    ctx.lineTo(cx + s * dx, cy + s * 0.29);
-    ctx.stroke();
   }
 }
 
@@ -1576,23 +1543,6 @@ function drawWindSwirl(ctx: CanvasRenderingContext2D, cx: number, cy: number, s:
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
-}
-
-function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const R2 = s * 0.5;
-  const r2 = s * 0.19;
-  ctx.fillStyle = WHITE;
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
-    const rad = i % 2 === 0 ? R2 : r2;
-    const x = cx + Math.cos(a) * rad;
-    const y = cy + Math.sin(a) * rad;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fill();
 }
 
 function drawTargetDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {

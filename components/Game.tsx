@@ -310,9 +310,52 @@ function TowerChip({ type }: { type: TowerType }) {
   return <canvas ref={ref} className="h-[52px] w-[52px]" aria-hidden />;
 }
 
-// Nearest open-ground tile to the middle of the map - where the free white Line
-// Laser starts, so it never spawns stranded on the road.
-function findLaserStart(blocked: Set<string>): { x: number; y: number } {
+// Smart default spot for the free white Line Laser: sit it right on the axis of the
+// stage's LONGEST straight, just off the road, so its beam fires straight down that
+// street and rakes the whole line of invaders. This gives the player a genuinely
+// good opening position per stage ("oh yeah, that's a good spot") instead of a random
+// tile in the middle; they can still drag it anywhere. Falls back to the nearest open
+// tile to centre if nothing on the street's axis is buildable.
+function findLaserStart(
+  waypoints: { x: number; y: number }[],
+  blocked: Set<string>,
+): { x: number; y: number } {
+  // the longest leg of the path is the street the laser should command
+  let bestLen = -1;
+  let a = waypoints[0];
+  let b = waypoints[1] ?? waypoints[0];
+  for (let i = 1; i < waypoints.length; i++) {
+    const len = Math.hypot(waypoints[i].x - waypoints[i - 1].x, waypoints[i].y - waypoints[i - 1].y);
+    if (len > bestLen) {
+      bestLen = len;
+      a = waypoints[i - 1];
+      b = waypoints[i];
+    }
+  }
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const dx = (b.x - a.x) / len; // unit direction ALONG the street
+  const dy = (b.y - a.y) / len;
+  const px = -dy; // unit perpendicular (to sit beside the road)
+  const py = dx;
+  // preferred spots, best first: on the street's axis just BEHIND its start (aim
+  // straight down it), just AHEAD of its end (aim straight back up it), then one
+  // tile to either side of the start and of the mid-point. Each must be buildable.
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const cands = [
+    { x: a.x - dx, y: a.y - dy },
+    { x: b.x + dx, y: b.y + dy },
+    { x: a.x + dx + px, y: a.y + dy + py },
+    { x: a.x + dx - px, y: a.y + dy - py },
+    { x: mx + px, y: my + py },
+    { x: mx - px, y: my - py },
+  ];
+  for (const c of cands) {
+    const col = Math.round(c.x);
+    const row = Math.round(c.y);
+    if (isBuildable(col, row, blocked)) return { x: col, y: row };
+  }
+  // fallback: nearest open-ground tile to the middle of the map
   const c0 = Math.floor(GRID_COLS / 2);
   const r0 = Math.floor(GRID_ROWS / 2);
   for (let rad = 0; rad < Math.max(GRID_COLS, GRID_ROWS); rad++) {
@@ -494,7 +537,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     // the free white Line Laser also needs to exist on the very first board (stage 1);
     // resetBoard covers restarts and later stages
     if (!towers.current.some((t) => t.type === "roamer")) {
-      const rc = findLaserStart(blockedRef.current);
+      const rc = findLaserStart(waypointsRef.current, blockedRef.current);
       towers.current.push({
         id: nextTowerId.current++,
         type: "roamer",
@@ -555,8 +598,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     projectiles.current = [];
     time.current = 0;
     nextTowerId.current = 1;
-    // one free white Line Laser per board, on open ground (reposition it anytime)
-    const rc = findLaserStart(blockedRef.current);
+    // one free white Line Laser per board, parked to command the longest street
+    const rc = findLaserStart(waypointsRef.current, blockedRef.current);
     towers.current.push({
       id: nextTowerId.current++,
       type: "roamer",

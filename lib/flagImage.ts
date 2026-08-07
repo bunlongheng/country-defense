@@ -99,9 +99,12 @@ export function getFlagPalette(code: string): string[] {
 }
 
 /**
- * Draws a flag into a 2:1 canvas texture for wrapping onto a sphere. The flag is
- * scaled to cover the whole surface so the marble reads as fully flag-wrapped
- * with no bald poles.
+ * Draws a flag into a 2:1 canvas texture for wrapping onto a sphere. The ENTIRE
+ * flag must survive - every stripe and emblem - so we fit it to the full texture
+ * HEIGHT (never cropping the top/bottom, which used to chop the outer bands off
+ * flags like Cambodia, leaving only the middle colour). The flag keeps its aspect
+ * and is centred; the leftover side strips are filled by extending the flag's own
+ * edge columns, so band-flags wrap seamlessly with no empty poles or bald bars.
  */
 export function flagToCanvas(
   img: HTMLImageElement,
@@ -113,9 +116,36 @@ export function flagToCanvas(
   const ctx = canvas.getContext("2d")!;
   const iw = img.naturalWidth || 640;
   const ih = img.naturalHeight || 480;
-  const scale = Math.max(canvas.width / iw, canvas.height / ih);
+  // On a sphere, an equirectangular texture maps its vertical CENTRE to the front
+  // face and squeezes the top/bottom toward the poles (invisible). So the whole flag
+  // must sit in the EQUATORIAL band - the middle ~64% of the texture height - so the
+  // front face shows the complete flag (every stripe + emblem), not just the middle
+  // colour. The pole caps above/below are filled by extending the flag's own top and
+  // bottom edge rows, so nothing looks bald and band-flags stay coherent.
+  const bandTop = Math.round(canvas.height * 0.18);
+  const bandH = canvas.height - bandTop * 2;
+  const scale = bandH / ih; // keep the flag's aspect (no stretch/distortion)
   const w = iw * scale;
-  const h = ih * scale;
-  ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+  const x0 = (canvas.width - w) / 2;
+  // side strips within the band: extend the flag's outermost columns so bands run edge to edge
+  if (x0 > 0) {
+    ctx.drawImage(img, 0, 0, 1, ih, 0, bandTop, x0, bandH);
+    ctx.drawImage(img, iw - 1, 0, 1, ih, x0 + w, bandTop, x0, bandH);
+  }
+  // the full, uncropped flag, centred in the equatorial band
+  ctx.drawImage(img, x0, bandTop, w, bandH);
+  // pole caps: stretch the band's top row up and its bottom row down to fill the poles
+  ctx.drawImage(canvas, 0, bandTop, canvas.width, 1, 0, 0, canvas.width, bandTop);
+  ctx.drawImage(
+    canvas,
+    0,
+    bandTop + bandH - 1,
+    canvas.width,
+    1,
+    0,
+    bandTop + bandH,
+    canvas.width,
+    canvas.height - (bandTop + bandH),
+  );
   return canvas;
 }

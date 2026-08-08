@@ -49,7 +49,7 @@ import {
   upgradeCost,
   sellValue,
 } from "@/lib/game/towers";
-import { draw, drawTower } from "@/lib/game/render";
+import { draw, drawTower, initStrollers, stepStrollers } from "@/lib/game/render";
 import {
   spawnWave,
   waveClearBonus,
@@ -403,6 +403,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const pathCellsRef = useRef<Set<string>>(pathCells(STAGES[0].waypoints)); // road tiles
   const noBuildRef = useRef<Set<string>>(new Set(STAGES[0].noBuild)); // water / lava
   const blockedRef = useRef<Set<string>>(new Set(pathCells(STAGES[0].waypoints))); // road + noBuild
+  const strollersRef = useRef(initStrollers()); // cosmetic wandering mini-tanks (dad N + son M)
   const pathLenRef = useRef(pathLength(STAGES[0].waypoints));
   const baseRef = useRef(stageBase(STAGES[0]));
   const hpMulRef = useRef(STAGES[0].hpMul);
@@ -602,6 +603,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     enemies.current = [];
     towers.current = [];
     projectiles.current = [];
+    strollersRef.current = initStrollers(); // fresh mascots on the new map
     time.current = 0;
     nextTowerId.current = 1;
     // one free white Line Laser per board, parked to command the longest street
@@ -909,6 +911,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
           noBuild: noBuildRef.current,
           baseCell: baseRef.current,
           shield: shieldRef.current,
+          strollers: strollersRef.current,
         });
         positionBase(now);
         raf = requestAnimationFrame(frame);
@@ -942,6 +945,16 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       if (hurtFrac > 0.8 && Math.random() < dt * 5)
         spawnExplosion(particlesRef.current, baseRef.current.x, baseRef.current.y - 0.4, "#f97316");
 
+      // stroll the cosmetic mascots - they steer around water and towers (never through)
+      stepStrollers(strollersRef.current, dt, (c, r) => {
+        if (noBuildRef.current.has(`${c},${r}`)) return false; // water / lava
+        for (const t of towers.current) {
+          const tc = t.pos ?? t.cell;
+          if (Math.round(tc.x) === c && Math.round(tc.y) === r) return false; // a tank
+        }
+        return true;
+      });
+
       draw(ctx, cellRef.current, {
         code,
         palette: paletteRef.current,
@@ -965,6 +978,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
         pathSet: pathCellsRef.current,
         noBuild: noBuildRef.current,
         baseCell: baseRef.current,
+        strollers: strollersRef.current,
       });
       positionBase(now);
       raf = requestAnimationFrame(frame);

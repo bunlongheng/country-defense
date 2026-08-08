@@ -34,6 +34,7 @@ export interface DrawState {
   noBuild?: Set<string>; // extra blocked tiles (water / lava), drawn themed
   baseCell?: Vec2; // where the home base sits (end of the path)
   shield?: boolean; // base shield still up? (hides the health bar, shows the bubble)
+  strollers?: StrollerPair; // cosmetic wandering mini-tanks (dad N + son M)
 }
 
 // One global sun direction so every dome, marble and mountain is lit the same way.
@@ -723,9 +724,9 @@ export function draw(ctx: CanvasRenderingContext2D, cell: number, s: DrawState) 
   };
   ctx.drawImage(background(cell, s.code, s.palette, st), 0, 0);
 
-  // cosmetic mascots: a mini white tank (a dad + his little son) that stroll around
+  // cosmetic mascots: a mini white tank (dad N + his little son M) strolling around
   // the map for charm - purely decorative, they never fight or block anything
-  drawStrollers(ctx, cell, s.time);
+  if (s.strollers) drawStrollers(ctx, cell, s.strollers);
 
   // keyboard build cursor (only shown during keyboard play)
   if (s.cursor) {
@@ -1173,14 +1174,15 @@ function drawParticles(ctx: CanvasRenderingContext2D, cell: number, list: Partic
 
 // A glossy, tanky turret: shadow, country-colored armor base, a domed turret lit
 // from the global sun, a barrel, a bright specular streak, and level pips.
-// A tiny cosmetic white tank that drives around, facing its travel direction. No
-// stats, no collision - it's just a cute little roamer for flavour.
+// A tiny cosmetic white tank that drives around, facing its travel direction, with
+// an upright ID letter on its dome. No stats, no collision - just flavour.
 function drawMiniTank(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   R: number,
   angle: number,
+  label: string,
 ) {
   ctx.save();
   ctx.translate(x, y);
@@ -1211,7 +1213,7 @@ function drawMiniTank(
   roundRect(ctx, R * 0.3, -R * 0.15, R * 0.95, R * 0.3, R * 0.1);
   ctx.fill();
   // white glossy turret dome
-  const domeR = R * 0.5;
+  const domeR = R * 0.52;
   const dome = ctx.createRadialGradient(-domeR * 0.35, -domeR * 0.4, 1, 0, 0, domeR);
   dome.addColorStop(0, "#ffffff");
   dome.addColorStop(1, "#aeb6c2");
@@ -1219,37 +1221,121 @@ function drawMiniTank(
   ctx.beginPath();
   ctx.arc(0, 0, domeR, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.9)"; // gloss glint
-  ctx.beginPath();
-  ctx.arc(-domeR * 0.3, -domeR * 0.35, domeR * 0.28, 0, Math.PI * 2);
-  ctx.fill();
   ctx.restore();
+  // ID letter (N/M), drawn UPRIGHT in screen space so it's always readable
+  ctx.fillStyle = "#1e293b";
+  ctx.font = `900 ${Math.max(6, R * 0.7)}px system-ui, -apple-system, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x, y + R * 0.03);
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
 }
 
-// The little white "dad + son" pair strolling a slow, smooth wander around the map.
-// Positions are a pure function of time, so it needs no state and stays deterministic.
-function drawStrollers(ctx: CanvasRenderingContext2D, cell: number, time: number) {
-  const mx = 1.4;
-  const my = 1.1;
-  const spanX = GRID_COLS - 2 * mx;
-  const spanY = GRID_ROWS - 2 * my;
-  const at = (tt: number): Vec2 => ({
-    x: mx + spanX * (0.5 + 0.44 * Math.sin(tt * 0.15) + 0.06 * Math.sin(tt * 0.5)),
-    y: my + spanY * (0.5 + 0.42 * Math.cos(tt * 0.12) + 0.07 * Math.sin(tt * 0.4 + 1.1)),
-  });
-  // dad leads; his son trails a little behind him along the very same path
-  const pair = [
-    { t: time, size: cell * 0.2 }, // dad - about 20% of a tile
-    { t: time - 1.7, size: cell * 0.14 }, // son - smaller, following
-  ];
-  for (const m of pair) {
-    const c = at(m.t);
-    const ahead = at(m.t + 0.05);
-    const angle = Math.atan2(ahead.y - c.y, ahead.x - c.x);
-    const bob = Math.sin(m.t * 6) * 0.02; // tiny bounce as it drives
-    const p = toPx({ x: c.x, y: c.y + bob }, cell);
-    drawMiniTank(ctx, p.x, p.y, m.size, angle);
+// A cosmetic mini-tank that drives around the map: N ("Northern", the dad) leads and
+// M ("Miller", his little son) trails behind him. Each is a real little agent with a
+// position + heading that STEERS around water and towers, so it never drives through
+// them - it visibly turns away. State lives in the React component; these helpers are
+// the pure sim + the draw.
+export interface Stroller {
+  x: number; // tile coords
+  y: number;
+  heading: number; // radians - facing / travel direction
+  goal: number; // heading it drifts toward while wandering
+  wanderT: number; // seconds until it picks a new wander goal
+}
+export interface StrollerPair {
+  dad: Stroller;
+  son: Stroller;
+  trail: Vec2[]; // dad's recent positions, so the son can follow a step behind
+}
+
+export function initStrollers(): StrollerPair {
+  const cx = GRID_COLS / 2;
+  const cy = GRID_ROWS / 2 - 1;
+  return {
+    dad: { x: cx, y: cy, heading: 0, goal: 0, wanderT: 2 },
+    son: { x: cx - 1, y: cy, heading: 0, goal: 0, wanderT: 2 },
+    trail: [],
+  };
+}
+
+const STROLL_SPEED = 0.75; // tiles/sec - a slow browse
+const STROLL_LOOK = 0.85; // how far ahead it checks for obstacles (tiles)
+// candidate turns (radians) tried in order: the smallest turn that's clear wins, so
+// the tank makes the gentlest realistic swerve around whatever's in front of it
+const STROLL_TURNS = [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4, Math.PI];
+
+// Advance one stroller a step: drift toward its goal heading, but turn to the nearest
+// clear direction whenever the tile ahead is blocked (water or a tower).
+function stepStroller(
+  s: Stroller,
+  dt: number,
+  speed: number,
+  walkable: (c: number, r: number) => boolean,
+  wander: boolean,
+) {
+  if (wander) {
+    s.wanderT -= dt;
+    if (s.wanderT <= 0) {
+      s.goal = Math.random() * Math.PI * 2;
+      s.wanderT = 2 + Math.random() * 3;
+    }
   }
+  // rotate the heading gently toward the goal
+  const diff = ((s.goal - s.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  s.heading += Math.max(-1.4 * dt, Math.min(1.4 * dt, diff));
+  // obstacle avoidance: the smallest turn whose look-ahead tile is open wins
+  const step = speed * dt;
+  for (const turn of STROLL_TURNS) {
+    const h = s.heading + turn;
+    const nx = s.x + Math.cos(h) * STROLL_LOOK;
+    const ny = s.y + Math.sin(h) * STROLL_LOOK;
+    if (
+      nx > 0.6 &&
+      nx < GRID_COLS - 0.6 &&
+      ny > 0.6 &&
+      ny < GRID_ROWS - 0.6 &&
+      walkable(Math.floor(nx), Math.floor(ny))
+    ) {
+      s.heading = h;
+      if (turn !== 0) s.goal = h; // commit to the swerve so it doesn't jitter
+      s.x += Math.cos(h) * step;
+      s.y += Math.sin(h) * step;
+      return;
+    }
+  }
+  s.heading += 2.2 * dt; // boxed in on all sides: spin until a gap opens
+}
+
+// Advance the dad + son one frame. `walkable(col,row)` = open ground the tanks may
+// drive on (NOT water, NOT a tile with a tower), so they steer visibly around both.
+export function stepStrollers(
+  sp: StrollerPair,
+  dt: number,
+  walkable: (c: number, r: number) => boolean,
+) {
+  const d = Math.min(dt, 0.05); // clamp so one long frame can't jump them through a wall
+  stepStroller(sp.dad, d, STROLL_SPEED, walkable, true);
+  sp.trail.push({ x: sp.dad.x, y: sp.dad.y });
+  if (sp.trail.length > 60) sp.trail.shift();
+  // the son aims for where dad was ~18 frames ago, so he follows a step behind
+  const behind = sp.trail[Math.max(0, sp.trail.length - 18)];
+  if (behind) {
+    const gap = Math.hypot(behind.x - sp.son.x, behind.y - sp.son.y);
+    sp.son.goal = Math.atan2(behind.y - sp.son.y, behind.x - sp.son.x);
+    stepStroller(sp.son, d, STROLL_SPEED * (gap > 1.2 ? 1.2 : 0.8), walkable, false);
+  } else {
+    stepStroller(sp.son, d, STROLL_SPEED, walkable, true);
+  }
+}
+
+// Draw the pair: son first (smaller, behind), then the bigger dad on top.
+function drawStrollers(ctx: CanvasRenderingContext2D, cell: number, sp: StrollerPair) {
+  const sonP = toPx(sp.son, cell);
+  drawMiniTank(ctx, sonP.x, sonP.y, cell * 0.15, sp.son.heading, "M");
+  const dadP = toPx(sp.dad, cell);
+  drawMiniTank(ctx, dadP.x, dadP.y, cell * 0.21, sp.dad.heading, "N");
 }
 
 export function drawTower(
@@ -1990,41 +2076,40 @@ function drawShot(
       break;
     }
     case "flame": {
-      // DRAGON FIRE: a continuous short jet of flame from the barrel to the target -
-      // a widening cone, white-hot at the muzzle fading to red at the tip, with
-      // flickering tongues and drifting embers. The tower fires fast, so overlapping
-      // jets read as one sustained flamethrower stream.
+      // DRAGON FIRE: a STRAIGHT, focused jet of flame fired right at the target (not a
+      // wide cone) - a narrow column, white-hot at the muzzle fading to red at the tip,
+      // with small flickering tongues hugging the line. The tower fires fast, so
+      // overlapping jets read as one sustained, straight flamethrower stream.
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len; // unit perpendicular, for the cone width + wobble
+      const nx = -dy / len; // unit perpendicular, for the small wobble only
       const ny = dx / len;
       const t01 = 1 - Math.max(0, Math.min(1, pr.ttl / 0.18)); // 0 fresh -> 1 fading
       ctx.save();
       ctx.globalCompositeOperation = "lighter"; // fire adds up where it overlaps
-      // the glowing cone body: narrow at the muzzle, flaring at the tip
-      const w0 = s * 0.1;
-      const w1 = s * 0.4 * (1 - t01 * 0.3);
-      const cone = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-      cone.addColorStop(0, "rgba(255,240,180,0.85)");
-      cone.addColorStop(0.45, "rgba(255,140,40,0.6)");
-      cone.addColorStop(1, "rgba(200,30,0,0)");
-      ctx.fillStyle = cone;
-      ctx.beginPath();
-      ctx.moveTo(a.x + nx * w0, a.y + ny * w0);
-      ctx.lineTo(b.x + nx * w1, b.y + ny * w1);
-      ctx.lineTo(b.x - nx * w1, b.y - ny * w1);
-      ctx.lineTo(a.x - nx * w0, a.y - ny * w0);
-      ctx.closePath();
-      ctx.fill();
-      // flickering flame tongues strung along the jet
+      ctx.lineCap = "round";
+      const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      grad.addColorStop(0, "rgba(255,240,190,0.9)");
+      grad.addColorStop(0.5, "rgba(255,140,40,0.7)");
+      grad.addColorStop(1, "rgba(210,35,0,0)");
+      // a straight column of fire: a soft outer flame, a brighter middle, a white-hot core
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = s * 0.26;
+      line(ctx, a, b);
+      ctx.lineWidth = s * 0.13;
+      line(ctx, a, b);
+      ctx.strokeStyle = "rgba(255,255,235,0.9)"; // white-hot core, only near the muzzle
+      ctx.lineWidth = s * 0.05;
+      line(ctx, a, { x: a.x + dx * 0.6, y: a.y + dy * 0.6 });
+      // small flickering tongues right ON the line (tiny wobble - it stays straight)
       const tongues = 5;
       for (let k = 0; k < tongues; k++) {
         const t = (k + 0.5) / tongues;
-        const wob = Math.sin(k * 2.3 + pr.jitter * 22 + t01 * 30) * s * 0.12 * t;
+        const wob = Math.sin(k * 2.3 + pr.jitter * 22 + t01 * 30) * s * 0.05;
         const fx = a.x + dx * t + nx * wob;
         const fy = a.y + dy * t + ny * wob;
-        const fr = s * (0.09 + t * 0.2);
+        const fr = s * (0.12 - t * 0.03); // slightly fatter near the muzzle, tapering to the tip
         const fg = ctx.createRadialGradient(fx, fy, 1, fx, fy, fr);
         fg.addColorStop(0, t < 0.4 ? "rgba(255,255,225,0.95)" : "rgba(255,205,90,0.85)");
         fg.addColorStop(0.5, "rgba(255,110,20,0.5)");
@@ -2035,7 +2120,7 @@ function drawShot(
         ctx.fill();
       }
       // muzzle flash at the barrel
-      const mr = s * 0.3;
+      const mr = s * 0.28;
       const mg = ctx.createRadialGradient(a.x, a.y, 1, a.x, a.y, mr);
       mg.addColorStop(0, "rgba(255,255,230,0.9)");
       mg.addColorStop(0.5, "rgba(255,150,40,0.6)");

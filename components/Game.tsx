@@ -1899,14 +1899,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                   ))}
                 </span>
               </div>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex justify-center">
                 <button
                   onClick={doUpgrade}
                   disabled={
                     selected.level >= MAX_LEVEL ||
                     gold < upgradeCost(selected.type, selected.level)
                   }
-                  className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-40"
+                  className="min-h-11 rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-40"
                   style={{
                     backgroundColor: TOWER_DEFS[selected.type].color,
                     color: readableOn(TOWER_DEFS[selected.type].color),
@@ -1916,22 +1916,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
                     ? "Max level"
                     : `Upgrade $${upgradeCost(selected.type, selected.level)}`}
                 </button>
-                {selected.type !== "roamer" && (
-                  <button
-                    onClick={doSell}
-                    className="min-h-11 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white"
-                  >
-                    Sell ${sellValue(selected.type, selected.level)}
-                  </button>
-                )}
               </div>
-              {selected.type === "roamer" ? (
-                <div className="mt-2 text-[11px] text-white/50">Drag me anywhere, anytime</div>
-              ) : (
-                phase === "ready" && (
-                  <div className="mt-2 text-[11px] text-white/50">Drag me to move</div>
-                )
-              )}
             </div>
           )}
 

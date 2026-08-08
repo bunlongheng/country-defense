@@ -1206,6 +1206,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   // honeycomb menu of towers to pick from; road -> reject.
   const onCanvasPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     unlockAudio();
+    // paused: the map is frozen - ignore taps so nothing opens, builds or moves
+    if (pausedRef.current) return;
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const cell = cellRef.current;
@@ -1405,6 +1407,12 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const togglePause = () => {
     pausedRef.current = !pausedRef.current;
     setPaused(pausedRef.current);
+    // pausing: nobody's buying anything, so close the build menu / tower preview
+    if (pausedRef.current) {
+      setMenu(null);
+      setSelected(null);
+      previewRef.current = null;
+    }
   };
 
   // ---- gamepad: play the whole game with a Bluetooth controller ----------
@@ -1748,6 +1756,23 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
               className="pointer-events-none absolute inset-0 z-50 rounded-2xl bg-white"
               style={{ animation: "nukeFlash 0.38s ease-out forwards" }}
             />
+          )}
+
+          {/* PAUSED: a big, clear sign in the middle while the game is frozen (the
+              build menu is hidden on pause - nothing to buy while paused) */}
+          {paused && (
+            <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
+              <div
+                className="flex flex-col items-center gap-2 rounded-3xl border border-white/15 bg-black/55 px-10 py-7 backdrop-blur-sm sm:px-14 sm:py-9"
+                style={{ animation: "popIn 0.3s ease-out" }}
+              >
+                <PauseIcon className="h-12 w-12 text-white sm:h-16 sm:w-16" strokeWidth={2.5} />
+                <div className="text-4xl font-black tracking-[0.3em] text-white sm:text-6xl">
+                  PAUSED
+                </div>
+                <div className="text-xs text-white/60 sm:text-sm">Tap play to resume</div>
+              </div>
+            </div>
           )}
 
           {/* radial build menu: one petal per buildable tower around the center (the

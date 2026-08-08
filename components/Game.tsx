@@ -16,6 +16,7 @@ import { COUNTRIES, findCountry, flagUrl } from "@/lib/countries";
 import { loadFlagImage, getFlagPalette } from "@/lib/flagImage";
 import FlagShatter3D from "./FlagShatter3D";
 import FlagMarble3D from "./FlagMarble3D";
+import Trophy3D from "./Trophy3D";
 import {
   unlockAudio,
   toggleMute,
@@ -84,6 +85,7 @@ import {
 } from "@/lib/game/particles";
 
 const START_GOLD = 200;
+const AI_START_GOLD = 6000; // AI/demo mode: plenty of gold each stage to blanket a winning board
 const START_LIVES = 10;
 const NUKE_RADIUS = 3; // tiles wiped by the one-per-game nuke
 
@@ -374,7 +376,15 @@ function findLaserStart(
   return { x: c0, y: r0 };
 }
 
-export default function Game({ code, onExit }: { code: string; onExit: () => void }) {
+export default function Game({
+  code,
+  onExit,
+  ai = false,
+}: {
+  code: string;
+  onExit: () => void;
+  ai?: boolean;
+}) {
   const country = findCountry(code);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseMarbleRef = useRef<HTMLDivElement>(null); // 3D flag marble pinned over the base tile
@@ -422,7 +432,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [nukeFlash, setNukeFlash] = useState(false);
 
   // HUD state (updated from the loop only when a value changes)
-  const [gold, setGold] = useState(START_GOLD);
+  const [gold, setGold] = useState(ai ? AI_START_GOLD : START_GOLD);
   const [wave, setWave] = useState(1);
   const [kills, setKills] = useState(0); // total invaders terminated
   const killsRef = useRef(0);
@@ -445,8 +455,8 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [difficulty, setDifficulty] = useState<Difficulty>("Normal");
-  const difficultyRef = useRef<Difficulty>("Normal");
+  const [difficulty, setDifficulty] = useState<Difficulty>(ai ? "Easy" : "Normal");
+  const difficultyRef = useRef<Difficulty>(ai ? "Easy" : "Normal");
   const [showSettings, setShowSettings] = useState(false);
   // honeycomb build menu: opened by tapping an empty buildable tile
   const [menu, setMenu] = useState<{
@@ -477,8 +487,10 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     moved: boolean;
   } | null>(null);
 
-  const goldRef = useRef(START_GOLD);
+  const goldRef = useRef(ai ? AI_START_GOLD : START_GOLD);
   const livesRef = useRef(START_LIVES);
+  const aiRef = useRef(ai); // AI/demo autoplay enabled (read in the loop + resetBoard)
+  const aiTypeIdx = useRef(0); // cycles tower types so the AI buys a bit of everything
   // one-time base shield: soaks the first invader that reaches the base for free
   // (no life lost), then pops - so the base survives 11 leaks instead of 10. The
   // white wavy bubble shows while it's up; the health bar hides until it pops.
@@ -502,6 +514,7 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
   useEffect(() => {
     buildTypeRef.current = buildType;
   }, [buildType]);
+
 
   // Keep the map clean: the radial build menu and the tower popup auto-hide after 4s
   // if you don't pick anything, so a stray open menu never lingers over the board.
@@ -633,13 +646,14 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
       pos: { x: rc.x, y: rc.y },
     });
     seedRef.current = Math.floor(Math.random() * pool.current.length);
-    goldRef.current = START_GOLD;
+    const startGold = aiRef.current ? AI_START_GOLD : START_GOLD;
+    goldRef.current = startGold;
     livesRef.current = START_LIVES;
     shieldRef.current = true; // fresh shield each run
     setShieldUp(true);
     waveRef.current = 1;
     setResult(null);
-    setGold(START_GOLD);
+    setGold(startGold);
     setWave(1);
     setSelected(null);
     setBuildType("laser");
@@ -1425,6 +1439,77 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     setSelected(null);
   };
 
+  // ---- AI / DEMO autoplay (promo capture) --------------------------------
+  // Buys a bit of EVERY tank type on the open tiles beside the road, upgrades them
+  // toward max, and starts each wave - clearing all 10 stages hands-free. Enabled by
+  // loading the game with `?ai` (forced to Easy + a big gold stipend so it reliably
+  // wins). Purely a spectator demo; a person never touches the controls.
+  useEffect(() => {
+    if (!ai) return;
+    // every open tile next to the road (so its tower actually reaches enemies), that
+    // isn't already taken by a tower
+    const nearPathTiles = () => {
+      const path = pathCellsRef.current;
+      const taken = new Set(
+        towers.current.map((t) => {
+          const p = t.pos ?? t.cell;
+          return `${Math.round(p.x)},${Math.round(p.y)}`;
+        }),
+      );
+      const tiles: { x: number; y: number }[] = [];
+      for (let c = 0; c < GRID_COLS; c++) {
+        for (let r = 0; r < GRID_ROWS; r++) {
+          if (!isBuildable(c, r, blockedRef.current) || taken.has(`${c},${r}`)) continue;
+          let near = false;
+          for (let dc = -1; dc <= 1 && !near; dc++) {
+            for (let dr = -1; dr <= 1; dr++) {
+              if (path.has(`${c + dc},${r + dr}`)) {
+                near = true;
+                break;
+              }
+            }
+          }
+          if (near) tiles.push({ x: c, y: r });
+        }
+      }
+      return tiles;
+    };
+    const manage = () => {
+      // 1) build a variety of towers (cycles the whole roster) on open road-side tiles
+      for (const tile of nearPathTiles()) {
+        const type = TOWER_ORDER[aiTypeIdx.current % TOWER_ORDER.length];
+        if (goldRef.current < TOWER_DEFS[type].cost) break;
+        if (buildAt(tile.x, tile.y, type)) aiTypeIdx.current++;
+      }
+      // 2) pour any leftover gold into upgrades toward max level
+      for (const t of towers.current) {
+        while (t.level < MAX_LEVEL) {
+          const uc = upgradeCost(t.type, t.level);
+          if (goldRef.current < uc) break;
+          t.level += 1;
+          goldRef.current -= uc;
+        }
+      }
+      setGold(goldRef.current);
+    };
+    const id = window.setInterval(() => {
+      if (pausedRef.current) return;
+      const phase = phaseRef.current;
+      if (phase === "lost") {
+        resetGame(); // safety net - restart the demo (should not happen on Easy)
+        return;
+      }
+      if (phase === "ready") {
+        manage();
+        startWave();
+      } else if (phase === "wave") {
+        manage(); // keep upgrading with gold earned mid-wave
+      }
+      // "stageclear" auto-advances; "won" ends the demo on the winner screen
+    }, 450);
+    return () => window.clearInterval(id);
+  }, [ai, buildAt, startWave, resetGame]);
+
   const cycleSpeed = () => {
     const next = speedRef.current >= 5 ? 1 : speedRef.current + 1;
     speedRef.current = next;
@@ -1762,7 +1847,6 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
             @keyframes nukePop { 0%{transform:scale(.3);opacity:0} 28%{transform:scale(1.18);opacity:1} 100%{transform:scale(1);opacity:.92} }
             @keyframes nukeFlash { 0%{opacity:.9} 100%{opacity:0} }
             @keyframes confettiFall { 0%{transform:translateY(-30px) rotate(0deg);opacity:1} 100%{transform:translateY(95vh) rotate(720deg);opacity:.85} }
-            @keyframes trophySpin { 0%{transform:rotateY(0deg) scale(1)} 50%{transform:rotateY(180deg) scale(1.08)} 100%{transform:rotateY(360deg) scale(1)} }
             @keyframes popIn { 0%{transform:scale(.4);opacity:0} 60%{transform:scale(1.1);opacity:1} 100%{transform:scale(1)} }
             @keyframes creditsRoll { from{transform:translateY(0)} to{transform:translateY(-50%)} }
           `}</style>
@@ -1957,11 +2041,20 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
 
           {/* CHAMPION: beat all 10 stages - spinning gold cup + golden podium */}
           {phase === "won" && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-2xl bg-gradient-to-b from-amber-900/85 to-black/90 py-6 backdrop-blur-sm">
-              <div className="text-6xl" style={{ animation: "trophySpin 2.2s ease-in-out infinite" }}>
-                🏆
-              </div>
-              <div className="text-3xl font-black text-amber-300" style={{ animation: "popIn 0.5s ease-out" }}>
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 overflow-y-auto rounded-2xl bg-gradient-to-b from-amber-900/85 to-black/92 py-6 backdrop-blur-sm">
+              {/* a real spinning 3D gold trophy */}
+              <Trophy3D />
+              <div
+                className="text-4xl font-black tracking-wide sm:text-5xl"
+                style={{
+                  backgroundImage: "linear-gradient(180deg,#fff7cc 0%,#fbbf24 45%,#b45309 100%)",
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  color: "transparent",
+                  filter: "drop-shadow(0 2px 14px rgba(251,191,36,0.5))",
+                  animation: "popIn 0.5s ease-out",
+                }}
+              >
                 CHAMPION!
               </div>
               <div className="flex flex-col items-center">

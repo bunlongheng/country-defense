@@ -503,6 +503,22 @@ export default function Game({ code, onExit }: { code: string; onExit: () => voi
     buildTypeRef.current = buildType;
   }, [buildType]);
 
+  // Keep the map clean: the radial build menu and the tower popup auto-hide after 4s
+  // if you don't pick anything, so a stray open menu never lingers over the board.
+  useEffect(() => {
+    if (!menu) return;
+    const id = window.setTimeout(() => {
+      setMenu(null);
+      previewRef.current = null;
+    }, 4000);
+    return () => window.clearTimeout(id);
+  }, [menu]);
+  useEffect(() => {
+    if (!selected) return;
+    const id = window.setTimeout(() => setSelected(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [selected]);
+
   const pool = useRef(COUNTRIES.filter((c) => c.code !== code));
 
   const setPhase = (p: Phase) => {

@@ -1330,12 +1330,13 @@ export function stepStrollers(
   }
 }
 
-// Draw the pair: son first (smaller, behind), then the bigger dad on top.
+// Draw the pair: son first (behind), then the dad on top. The dad (N) is only a
+// touch bigger than the son (M) - they read as a matched little pair.
 function drawStrollers(ctx: CanvasRenderingContext2D, cell: number, sp: StrollerPair) {
   const sonP = toPx(sp.son, cell);
   drawMiniTank(ctx, sonP.x, sonP.y, cell * 0.15, sp.son.heading, "M");
   const dadP = toPx(sp.dad, cell);
-  drawMiniTank(ctx, dadP.x, dadP.y, cell * 0.21, sp.dad.heading, "N");
+  drawMiniTank(ctx, dadP.x, dadP.y, cell * 0.17, sp.dad.heading, "N");
 }
 
 export function drawTower(

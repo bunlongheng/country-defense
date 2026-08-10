@@ -13,7 +13,8 @@ export default function Home() {
   // server and first client render match (no hydration mismatch).
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.has("ai")) {
+    // `?demo` is the standard promo-capture trigger across repos; `?ai` is a legacy alias
+    if (p.has("demo") || p.has("ai")) {
       // one-time URL-driven auto-start; done in an effect (not lazy state) so the
       // server render and first client render match (CountrySelect) before we swap in
       /* eslint-disable react-hooks/set-state-in-effect */

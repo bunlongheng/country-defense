@@ -1,3 +1,13 @@
+<div align="center">
+  <img src="docs/icon.png" alt="Country Defense" width="96" height="96" />
+  <h1>Country Defense</h1>
+  <p><em>Kid-friendly browser tower-defense: defend your country's 3D flag marble across 10 stages</em></p>
+  <p><a href="https://country-defense-bheng.vercel.app">Live</a> &middot; <a href="https://github.com/bunlongheng/country-defense">Repo</a> &middot; <a href="https://bunlongheng.com/projects?name=country-defense">Portfolio</a></p>
+  <img src="docs/social-preview.png" alt="Country Defense - preview" width="820" />
+</div>
+
+---
+
 # Country Defense
 
 Pick any of the world's 194 countries as a glossy 3D flag marble, then defend it from 10 escalating waves of invaders using 7 upgradeable towers, with sound, particle effects, and a nation-themed battlefield. A clean, kid-friendly tower-defense game that runs entirely in the browser.

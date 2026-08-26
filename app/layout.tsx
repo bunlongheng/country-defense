@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import SwRegister from "./sw-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
   description:
     "Pick your country as a glossy 3D flag marble and defend it from waves of invaders with 7 upgradeable towers. A clean, kid-friendly tower defense game.",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Country Defense" },
+  manifest: "/manifest.webmanifest",
 };
 
 export const viewport = {
@@ -35,6 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className="min-h-full flex flex-col bg-black text-white select-none">
         {children}
+        <SwRegister />
       </body>
     </html>
   );
